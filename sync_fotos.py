@@ -118,7 +118,9 @@ def revisar_fitxers(missing_files, source_root, target_root):
     """
     import tkinter as tk
     from tkinter import filedialog, messagebox
-
+    player = None
+    vlc = None
+    vlc_instance = None
     try:
         from PIL import Image, ImageTk
         HAS_PIL = True
@@ -129,14 +131,15 @@ def revisar_fitxers(missing_files, source_root, target_root):
 
     try:
         import vlc
-    
+        vlc_instance = vlc.Instance()
+        player = vlc_instance.media_player_new()   
     except ImportError:
         print("[AVIS] VLC no instal·lat; no es podran reproduir vídeos.", file=sys.stderr)
         print("       Instal·leu-lo amb: pip install python-vlc", file=sys.stderr)
         vlc = None
+        player = None
 
-    vlc_instance = vlc.Instance()
-    player = vlc_instance.media_player_new()
+
 
     total = len(missing_files)
     state = {"idx": 0, "last_dir": target_root, "mogudes": 0, "saltades": 0}
@@ -168,11 +171,12 @@ def revisar_fitxers(missing_files, source_root, target_root):
     def on_press(event):
         global dragging, has_paused
         dragging = True
-        if player.is_playing():
-            player.pause()
-            while player.get_state() != vlc.State.Paused:
-                pass
-            has_paused = True
+        if player is not None:
+            if player.is_playing():
+                player.pause()
+                while player.get_state() != vlc.State.Paused:
+                    pass
+                has_paused = True
 
     def on_release(event):
         global dragging, has_paused
@@ -191,12 +195,13 @@ def revisar_fitxers(missing_files, source_root, target_root):
 
 
     def update_video_position():
-        if player.is_playing() and not dragging:
-            pos = player.get_position()
-            if pos >= 0:
-                video_pos.set(int(pos * 1000))
-
-        root.after(250, update_video_position)
+        if player is None:
+            if player.is_playing() and not dragging:
+                pos = player.get_position()
+                if pos >= 0:
+                    video_pos.set(int(pos * 1000))
+    
+            root.after(250, update_video_position)
 
     root = tk.Tk()
     root.title("Revisar fotos mancants")
@@ -248,8 +253,8 @@ def revisar_fitxers(missing_files, source_root, target_root):
     stats_var = tk.StringVar()
     tk.Label(btn_frame, textvariable=stats_var, bg="#1e1e1e", fg="#aaaaaa",
              font=("Segoe UI", 9)).pack(side=tk.RIGHT, padx=12)
-
-    update_video_position()
+    if vlc is not None and player is not None:
+        update_video_position()
     center_window(root)
 
     def add_tooltip(widget, text_func):
@@ -289,6 +294,23 @@ def revisar_fitxers(missing_files, source_root, target_root):
     def load_video(path):
 
         if vlc is None:
+            video_frame.lift()
+
+            for widget in video_frame.winfo_children():
+                widget.destroy()
+
+            tk.Label(
+                video_frame,
+                text=(
+                    "No es pot reproduir el vídeo.\n\n"
+                    "No s'ha trobat VLC Media Player o la llibreria python-vlc."
+                ),
+                justify=tk.CENTER,
+                font=("Segoe UI", 11),
+                fg="#888888"
+            ).pack(expand=True)
+
+            video_controls.pack_forget()
             print("[AVIS] VLC no disponible; no es pot reproduir el video.", file=sys.stderr)
             return
         if not video_controls.winfo_ismapped():
@@ -316,9 +338,10 @@ def revisar_fitxers(missing_files, source_root, target_root):
         player.play()
 
     def load_img(path):
-        if player.is_playing():
-            player.stop()
-            player.set_media(None)
+        if vlc is not None and player is not None:
+            if player.is_playing():
+                player.stop()
+                player.set_media(None)
         video_controls.pack_forget()
         video_frame.lower()
         canvas.delete("all")
@@ -491,16 +514,19 @@ def main():
 
     source = Path(args.origen).resolve()
     target = Path(args.desti).resolve()
-    cache_dir = Path(args.cache_dir).resolve() if args.cache_dir else Path.cwd()
-
+    cache_dir = (
+        Path(args.cache_dir).resolve()
+        if args.cache_dir
+        else Path.cwd() / "cache"
+    )
+    
     if not source.is_dir():
         print(f"Error: l'origen '{source}' no es un directori valid.", file=sys.stderr)
         sys.exit(1)
 
     # -- Netejar cache origen (no cal escanar res) ----------------------------
     if args.netejar_cache_origen:
-        cache_dir_early = Path(args.cache_dir).resolve() if args.cache_dir else Path.cwd()
-        cf = cache_path_for(source, cache_dir_early)
+        cf = cache_path_for(source, cache_dir)
         if cf.exists():
             cf.unlink()
             print(f"Cache eliminada: {cf}", file=sys.stderr)
