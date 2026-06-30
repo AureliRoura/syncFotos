@@ -17,5 +17,4 @@ Thumbs.db
 
 dest/
 source/
-*.json
-data/
+cache/
