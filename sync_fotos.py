@@ -91,7 +91,8 @@ def scan_directory(directory, total, cache_data):
         result[rel] = checksum
         processed += 1
         pct = processed * 100 // total if total else 100
-        print(f"\r  {processed}/{total} fitxers ({pct}%) [{reused} de cache]   ", end="", file=sys.stderr)
+        if processed % 100 == 0 or processed == total:
+            print(f"\r  {processed}/{total} fitxers ({pct}%) [{reused} de cache]   ", end="", file=sys.stderr)
 
     print(file=sys.stderr)
     updated_cache = {
@@ -262,10 +263,10 @@ def revisar_fitxers(missing_files, source_root, target_root):
     
         def enter(event):
             nonlocal tip
+
             tip = tk.Toplevel(widget)
             tip.wm_overrideredirect(True)
-            tip.wm_geometry(f"+{event.x_root + 12}+{event.y_root + 12}")
-    
+
             lbl = tk.Label(
                 tip,
                 text=text_func(),
@@ -277,7 +278,35 @@ def revisar_fitxers(missing_files, source_root, target_root):
                 justify=tk.LEFT,
             )
             lbl.pack()
-    
+
+            # Calcula la mida real del tooltip
+            tip.update_idletasks()
+
+            tip_w = tip.winfo_width()
+            tip_h = tip.winfo_height()
+
+            screen_w = widget.winfo_screenwidth()
+            screen_h = widget.winfo_screenheight()
+
+            # Posició inicial (a la dreta i sota el cursor)
+            x = event.x_root + 12
+            y = event.y_root + 12
+
+            # Si surt per la dreta, mou-lo a l'esquerra del cursor
+            if x + tip_w > screen_w:
+                x = event.x_root - tip_w - 12
+
+            # Si surt per sota, posa'l a sobre del cursor
+            MARGE = 40  # marge inferior per a la barra de tasques
+            if y + tip_h > screen_h - MARGE:
+                y = event.y_root - tip_h - 12
+
+            # Assegura que no surt per l'esquerra ni per dalt
+            x = max(0, x)
+            y = max(0, y)
+
+            tip.wm_geometry(f"+{x}+{y}")
+
         def leave(event):
             nonlocal tip
             if tip:
