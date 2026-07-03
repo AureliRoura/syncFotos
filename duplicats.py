@@ -15,7 +15,6 @@ import json
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
-from itertools import combinations
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
@@ -37,29 +36,41 @@ def load_cache(path):
         return json.load(f)
 
 
-def find_duplicate_pairs(cache_data):
+def find_duplicate_groups(cache_data, root_dir):
     """
-    Retorna una llista de tuples (rel_path_A, rel_path_B, checksum)
-    per a tots els parells de fotos/vídeos duplicats trobats a la cache.
-    Només es consideren fitxers amb extensions d'imatge o vídeo.
+    Retorna una llista de tuples (checksum, [rel_path, rel_path, ...])
+    per a cada grup de fotos/vídeos duplicats trobats a la cache
+    (un grup pot tenir 2 o més fitxers amb el mateix checksum).
+    Només es consideren fitxers amb extensions d'imatge o vídeo, i
+    NOMÉS els que realment existeixen al disc en aquest moment: un
+    fitxer que consta a la cache però que ja no hi és (esborrat,
+    mogut, disc extern desconnectat, etc.) es descarta i no es
+    considera duplicat de res.
+
+    Retorna (groups, missing_count) on missing_count és el nombre de
+    fitxers de la cache que s'han descartat per no existir al disc.
     """
     fitxers = cache_data.get("fitxers", {})
     media_exts = IMAGE_EXTS | VIDEO_EXTS
     by_checksum = defaultdict(list)
+    missing_count = 0
 
     for rel_path, info in fitxers.items():
         if Path(rel_path).suffix.lower() not in media_exts:
             continue
         chk = info.get("checksum")
-        if chk:
-            by_checksum[chk].append(rel_path)
+        if not chk:
+            continue
+        if not (root_dir / rel_path).exists():
+            missing_count += 1
+            continue
+        by_checksum[chk].append(rel_path)
 
-    pairs = []
+    groups = []
     for chk, paths in by_checksum.items():
         if len(paths) >= 2:
-            for a, b in combinations(sorted(paths), 2):
-                pairs.append((a, b, chk))
-    return pairs
+            groups.append((chk, sorted(paths)))
+    return groups, missing_count
 
 
 def format_size(size_bytes):
@@ -98,8 +109,12 @@ class DuplicatsApp:
     def __init__(self, cache_file=None):
         self.cache_data = {}
         self.root_dir = Path(".")
-        self.all_pairs = []       # [(rel_A, rel_B, chk), ...]
-        self.current_idx = 0
+        self.groups = []          # [(chk, [rel_1, rel_2, ...]), ...]
+        self.missing_count = 0    # fitxers de la cache descartats per no existir al disc
+        self.group_idx = 0
+        self.current_files = []   # fitxers del grup actual (llista mutable de "vius")
+        self.survivor = None      # fitxer "supervivent" actual del grup (costat esquerre)
+        self.cand_idx = None      # índex dins current_files del candidat a comparar (costat dret)
         self.deleted = 0
         self.skipped = 0
         self.deleted_files = set()
@@ -191,7 +206,8 @@ class DuplicatsApp:
             return
 
         self.root_dir = Path(self.cache_data.get("directori", "."))
-        self.all_pairs = find_duplicate_pairs(self.cache_data)
+        self.groups, self.missing_count = find_duplicate_groups(
+            self.cache_data, self.root_dir)
         self._show_info_screen()
 
     def _show_info_screen(self):
@@ -200,7 +216,8 @@ class DuplicatsApp:
         directori      = self.cache_data.get("directori", "Desconegut")
         ultim_escaneig = self.cache_data.get("ultim_escaneig", "Desconegut")
         num_fitxers    = len(self.cache_data.get("fitxers", {}))
-        num_pairs      = len(self.all_pairs)
+        num_grups      = len(self.groups)
+        num_pairs      = sum(len(files) - 1 for _, files in self.groups)
 
         outer = tk.Frame(self.root, bg=self.BG)
         outer.place(relx=0.5, rely=0.45, anchor=tk.CENTER)
@@ -230,7 +247,11 @@ class DuplicatsApp:
         info_row("Total fitxers:",   str(num_fitxers))
 
         dup_color = self.RED if num_pairs else self.GREEN
-        info_row("Parelles duplicades:", str(num_pairs), dup_color)
+        info_row("Grups de duplicats:", str(num_grups), dup_color)
+        info_row("Comparacions previstes:", str(num_pairs), dup_color)
+        if self.missing_count:
+            info_row("Descartats (no trobats al disc):",
+                      str(self.missing_count), self.ORANGE)
 
         # ── botons ────────────────────────────────────────────────────────────
         btn_row = tk.Frame(outer, bg=self.BG)
@@ -261,7 +282,10 @@ class DuplicatsApp:
     # ── inici de la revisió ───────────────────────────────────────────────────
 
     def _start_review(self):
-        self.current_idx = 0
+        self.group_idx = 0
+        self.current_files = []
+        self.survivor = None
+        self.cand_idx = None
         self.deleted = 0
         self.skipped = 0
         self.deleted_files = set()
@@ -362,22 +386,41 @@ class DuplicatsApp:
 
     # ── mostrar la parella actual ─────────────────────────────────────────────
 
-    def _advance_past_deleted(self):
-        """Salta les parelles on algun fitxer ja ha estat eliminat."""
-        while self.current_idx < len(self.all_pairs):
-            l, r, _ = self.all_pairs[self.current_idx]
-            if l in self.deleted_files or r in self.deleted_files:
-                self.current_idx += 1
-            else:
-                break
+    def _enter_current_group(self):
+        """Inicialitza l'estat de comparació pel grup group_idx: el
+        supervivent és el primer fitxer i el candidat és el segon."""
+        chk, files = self.groups[self.group_idx]
+        self.current_chk = chk
+        self.current_files = files
+        self.survivor = files[0]
+        self.cand_idx = 1
+
+    def _advance_to_pending(self):
+        """Passa al següent grup mentre l'actual estigui esgotat (cand_idx
+        més enllà de l'últim fitxer). Retorna False quan no queda cap
+        comparació pendent enlloc."""
+        while self.group_idx < len(self.groups):
+            if self.cand_idx is None:
+                self._enter_current_group()
+            if self.cand_idx < len(self.current_files):
+                return True
+            self.group_idx += 1
+            self.cand_idx = None
+        return False
+
+    def _remaining_count(self):
+        """Comparacions pendents: les que queden en el grup actual més
+        les de tots els grups posteriors."""
+        remaining = len(self.current_files) - self.cand_idx
+        for _, files in self.groups[self.group_idx + 1:]:
+            remaining += len(files) - 1
+        return remaining
 
     def _show_current_pair(self):
-        self._advance_past_deleted()
-
-        if self.current_idx >= len(self.all_pairs):
+        if not self._advance_to_pending():
             messagebox.showinfo(
                 "Revisió completada",
-                f"S'han revisat totes les parelles.\n\n"
+                f"S'han revisat tots els grups de duplicats.\n\n"
                 f"Eliminats: {self.deleted}\n"
                 f"Saltats:   {self.skipped}",
                 parent=self.root,
@@ -385,22 +428,18 @@ class DuplicatsApp:
             self.root.destroy()
             return
 
-        left_rel, right_rel, chk = self.all_pairs[self.current_idx]
-
-        # Compta quantes parelles vàlides queden (incloent l'actual)
-        remaining = sum(
-            1 for l, r, _ in self.all_pairs[self.current_idx:]
-            if l not in self.deleted_files and r not in self.deleted_files
-        )
+        left_rel  = self.survivor
+        right_rel = self.current_files[self.cand_idx]
+        remaining = self._remaining_count()
 
         self.title_var.set(
-            f"Parella  {self.current_idx + 1} / {len(self.all_pairs)}"
+            f"Grup {self.group_idx + 1} / {len(self.groups)}"
             f"   ·   en queden {remaining}"
         )
         self.stats_var.set(
             f"Eliminats: {self.deleted}   |   Saltats: {self.skipped}"
         )
-        self.chk_var.set(f"SHA-256: {chk}")
+        self.chk_var.set(f"SHA-256: {self.current_chk}")
 
         self._populate_side("left",  left_rel)
         self._populate_side("right", right_rel)
@@ -502,7 +541,8 @@ class DuplicatsApp:
     # ── accions ───────────────────────────────────────────────────────────────
 
     def _delete_file(self, side):
-        left_rel, right_rel, _ = self.all_pairs[self.current_idx]
+        left_rel  = self.survivor
+        right_rel = self.current_files[self.cand_idx]
         rel_path  = left_rel  if side == "left" else right_rel
         full_path = self.root_dir / rel_path
 
@@ -523,14 +563,21 @@ class DuplicatsApp:
             full_path.unlink()
             self.deleted += 1
             self.deleted_files.add(rel_path)
-            self.current_idx += 1
+            if side == "left":
+                # El candidat actual passa a ser el nou supervivent;
+                # es continuarà comparant amb el següent del mateix grup.
+                self.survivor = right_rel
+            # Tant si s'ha eliminat l'esquerra com la dreta, avancem
+            # al següent candidat del mateix grup (el supervivent es
+            # manté fins que s'esgoti el grup).
+            self.cand_idx += 1
             self._show_current_pair()
         except OSError as exc:
             messagebox.showerror("Error en eliminar", str(exc), parent=self.root)
 
     def _skip(self):
         self.skipped += 1
-        self.current_idx += 1
+        self.cand_idx += 1
         self._show_current_pair()
 
     def _quit_review(self):
