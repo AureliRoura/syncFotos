@@ -44,7 +44,8 @@ def load_cache(cache_file):
     if not cache_file.exists():
         return {}
     try:
-        with open(cache_file, "r", encoding="utf-8") as f:
+        # utf-8-sig permet llegir fitxers amb o sense BOM.
+        with open(cache_file, "r", encoding="utf-8-sig") as f:
             return json.load(f)
     except (OSError, json.JSONDecodeError) as e:
         print(f"[AVIS] No s ha pogut carregar la cache '{cache_file}': {e}", file=sys.stderr)
@@ -57,6 +58,63 @@ def save_cache(cache_file, data):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except OSError as e:
         print(f"[AVIS] No s ha pogut desar la cache '{cache_file}': {e}", file=sys.stderr)
+
+def cache_is_synchronized(directory, cache_data):
+    """
+    Comprova si la cache reflecteix exactament l'estat actual del disc.
+    Es valida directori, existència dels fitxers i metadades bàsiques (mtime i mida).
+    """
+    if not cache_data:
+        return False, "sense dades de cache"
+
+    if cache_data.get("directori") != str(directory):
+        return False, "directori de cache diferent"
+
+    cached_files = cache_data.get("fitxers")
+    if not isinstance(cached_files, dict):
+        return False, "format de cache invalid"
+
+    disk_files = {}
+    try:
+        for file_path in directory.rglob("*"):
+            if not file_path.is_file():
+                continue
+            rel = str(file_path.relative_to(directory))
+            stat = file_path.stat()
+            disk_files[rel] = {"mtime": stat.st_mtime, "mida": stat.st_size}
+    except OSError as e:
+        return False, f"error llegint directori: {e}"
+
+    if len(disk_files) != len(cached_files):
+        return False, "nombre de fitxers diferent"
+
+    for rel, disk_info in disk_files.items():
+        cached_info = cached_files.get(rel)
+        if not cached_info:
+            return False, f"fitxer nou o no cachejat: {rel}"
+        if cached_info.get("mtime") != disk_info["mtime"]:
+            return False, f"mtime diferent: {rel}"
+        if cached_info.get("mida") != disk_info["mida"]:
+            return False, f"mida diferent: {rel}"
+        if not cached_info.get("checksum"):
+            return False, f"checksum absent: {rel}"
+
+    return True, "ok"
+
+def load_validated_cache(directory, cache_file):
+    cache_data = load_cache(cache_file)
+    if not cache_data:
+        return {}, "cache inexistent o buida"
+
+    synchronized, reason = cache_is_synchronized(directory, cache_data)
+    if synchronized:
+        return cache_data, "cache valida"
+
+    print(
+        f"[AVIS] Cache desalineada per '{directory}'. Motiu: {reason}. Es regenerara.",
+        file=sys.stderr,
+    )
+    return {}, reason
 
 def scan_directory(directory, total, cache_data):
     cached_files = cache_data.get("fitxers", {})
@@ -569,10 +627,12 @@ def main():
 
     # Desti
     target_cache_file = cache_path_for(target, cache_dir)
-    target_cache = load_cache(target_cache_file)
+    target_cache, target_cache_status = load_validated_cache(target, target_cache_file)
     last_scan_dst = target_cache.get("ultim_escaneig", "mai")
     print(f"Escaneant desti:  {target}", file=sys.stderr)
     print(f"  Ultim escaneig: {last_scan_dst}", file=sys.stderr)
+    if target_cache_status != "cache valida":
+        print(f"  Estat cache:    {target_cache_status}", file=sys.stderr)
     target_total = count_files(target)
     print(f"  {target_total} fitxers trobats. Calculant checksums...", file=sys.stderr)
     target_map, updated_target_cache = scan_directory(target, target_total, target_cache)
@@ -582,10 +642,12 @@ def main():
 
     # Origen
     source_cache_file = cache_path_for(source, cache_dir)
-    source_cache = load_cache(source_cache_file)
+    source_cache, source_cache_status = load_validated_cache(source, source_cache_file)
     last_scan_src = source_cache.get("ultim_escaneig", "mai")
     print(f"\nEscaneant origen: {source}", file=sys.stderr)
     print(f"  Ultim escaneig: {last_scan_src}", file=sys.stderr)
+    if source_cache_status != "cache valida":
+        print(f"  Estat cache:    {source_cache_status}", file=sys.stderr)
     source_total = count_files(source)
     print(f"  {source_total} fitxers trobats. Calculant checksums...", file=sys.stderr)
     source_map, updated_source_cache = scan_directory(source, source_total, source_cache)
