@@ -12,6 +12,9 @@ Si no s'indica el fitxer, s'obre un diàleg per seleccionar-lo.
 
 import sys
 import json
+import os
+import subprocess
+import platform
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
@@ -73,6 +76,18 @@ def find_duplicate_groups(cache_data, root_dir):
     return groups, missing_count
 
 
+def open_with_default_app(path):
+    """Obre un fitxer (p. ex. un vídeo) amb l'aplicació per defecte del
+    sistema operatiu. Funciona a Windows, macOS i Linux."""
+    system = platform.system()
+    if system == "Windows":
+        os.startfile(str(path))          # type: ignore[attr-defined]
+    elif system == "Darwin":
+        subprocess.Popen(["open", str(path)])
+    else:
+        subprocess.Popen(["xdg-open", str(path)])
+
+
 def format_size(size_bytes):
     if size_bytes >= 1024 * 1024:
         return f"{size_bytes / 1024 / 1024:.1f} MB"
@@ -119,6 +134,8 @@ class DuplicatsApp:
         self.skipped = 0
         self.deleted_files = set()
         self._img_refs = [None, None]
+        self._video_btn_refs = [None, None]
+        self._display_box = (400, 400)
 
         self.root = tk.Tk()
         self.root.title("Gestor de Duplicats")
@@ -441,6 +458,17 @@ class DuplicatsApp:
         )
         self.chk_var.set(f"SHA-256: {self.current_chk}")
 
+        # Calculem una mida comuna pels dos previsualitzadors, perquè
+        # les dues imatges es mostrin exactament amb el mateix tamany
+        # (independentment de si un canvas encara no s'ha renderitzat
+        # exactament igual que l'altre en aquest instant).
+        self.root.update_idletasks()
+        common_w = min(self.left_canvas.winfo_width(),
+                        self.right_canvas.winfo_width())
+        common_h = min(self.left_canvas.winfo_height(),
+                        self.right_canvas.winfo_height())
+        self._display_box = (max(common_w, 200), max(common_h, 200))
+
         self._populate_side("left",  left_rel)
         self._populate_side("right", right_rel)
 
@@ -496,47 +524,85 @@ class DuplicatsApp:
     def _draw_on_canvas(self, canvas, path, img_idx):
         """Dibuixa la previsualització al canvas indicat."""
         canvas.delete("all")
-        w   = max(canvas.winfo_width(),  200)
-        h   = max(canvas.winfo_height(), 200)
+        # El canvas.delete("all") no destrueix els widgets incrustats
+        # (com el botó de "Reproduir"), només els desmapa. Cal destruir-
+        # los explícitament o s'acumulen com a widgets orfes.
+        if self._video_btn_refs[img_idx] is not None:
+            try:
+                self._video_btn_refs[img_idx].destroy()
+            except tk.TclError:
+                pass
+            self._video_btn_refs[img_idx] = None
+        # Centre segons la mida real d'aquest canvas...
+        own_w = max(canvas.winfo_width(),  200)
+        own_h = max(canvas.winfo_height(), 200)
+        # ...però la mida de la imatge/miniatura és la mateixa (box comú)
+        # per a esquerra i dreta, perquè les dues es vegin igual de grans.
+        box_w, box_h = self._display_box
         ext = path.suffix.lower()
 
         if ext in IMAGE_EXTS:
             if not HAS_PIL:
                 canvas.create_text(
-                    w // 2, h // 2,
+                    own_w // 2, own_h // 2,
                     text="Per veure imatges cal Pillow:\npip install Pillow",
                     fill="#888888", justify=tk.CENTER,
                     font=("Segoe UI", 11))
                 return
             try:
                 img = Image.open(path)
-                img.thumbnail((w, h), Image.LANCZOS)
+                img.thumbnail((box_w, box_h), Image.LANCZOS)
                 photo = ImageTk.PhotoImage(img)
                 self._img_refs[img_idx] = photo   # evita GC
-                canvas.create_image(w // 2, h // 2,
+                canvas.create_image(own_w // 2, own_h // 2,
                                     anchor=tk.CENTER, image=photo)
             except Exception as exc:
                 canvas.create_text(
-                    w // 2, h // 2,
+                    own_w // 2, own_h // 2,
                     text=f"Error en carregar la imatge:\n{exc}",
                     fill="#888888", justify=tk.CENTER)
 
         elif ext in VIDEO_EXTS:
             canvas.create_text(
-                w // 2, h // 2 - 20,
+                own_w // 2, own_h // 2 - 40,
                 text="🎬",
                 fill="#aaaaaa", font=("Segoe UI", 36))
             canvas.create_text(
-                w // 2, h // 2 + 28,
+                own_w // 2, own_h // 2 + 8,
                 text=f"Vídeo  ·  {path.name}",
                 fill="#aaaaaa", justify=tk.CENTER,
                 font=("Segoe UI", 11))
+
+            # Botó independent per reproduir NOMÉS aquest vídeo amb
+            # l'aplicació per defecte del sistema.
+            btn = tk.Button(
+                canvas, text="▶  Reproduir vídeo",
+                font=("Segoe UI", 10, "bold"),
+                bg=self.GREEN, fg="white",
+                relief=tk.FLAT, cursor="hand2",
+                padx=14, pady=6,
+                command=lambda p=path: self._play_video(p),
+            )
+            self._video_btn_refs[img_idx] = btn   # evita GC
+            canvas.create_window(own_w // 2, own_h // 2 + 48, window=btn)
         else:
             canvas.create_text(
-                w // 2, h // 2,
+                own_w // 2, own_h // 2,
                 text=f"📄  {path.name}\n\n(format no suportat)",
                 fill="#888888", justify=tk.CENTER,
                 font=("Segoe UI", 11))
+
+    def _play_video(self, path):
+        """Obre aquest vídeo concret amb l'aplicació per defecte del
+        sistema, sense afectar l'altre vídeo mostrat al costat."""
+        try:
+            open_with_default_app(path)
+        except Exception as exc:
+            messagebox.showerror(
+                "Error en obrir el vídeo",
+                f"No s'ha pogut obrir:\n{path}\n\n{exc}",
+                parent=self.root,
+            )
 
     # ── accions ───────────────────────────────────────────────────────────────
 
