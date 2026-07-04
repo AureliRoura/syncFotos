@@ -160,15 +160,102 @@ def scan_directory(directory, total, cache_data):
     }
     return result, updated_cache
 
-def data_a_path(filename):
+def _cerca_desti_existent(target_root, any_, mes, dia):
+    """
+    Busca dins el desti si ja existeix un directori adequat per a
+    aquesta data, seguint dues regles (per aquest ordre de prioritat):
+
+      1. Un directori que comenci EXACTAMENT amb la mateixa data
+         (AAAA_MM_DD) seguit opcionalment de més text, p. ex.:
+         "2024_07_03 aniversari Marc" -> es proposa aquest directori
+         tal qual (és on ja s'estan desant fotos d'aquell dia).
+
+      2. Un directori amb un RANG de dies, p. ex.:
+         "2024_07_01-05 vacances" -> si el nostre fitxer te el mateix
+         any i mes, i el dia cau dins el rang [01, 05], es proposa
+         un subdirectori DINS d'aquest amb el format habitual de la
+         regla 1 (AAAA_MM_DD), p. ex.:
+         "2024_07_01-05 vacances/2024_07_03"
+
+    Es cerca tant dins de target_root/<any> (l'estructura habitual
+    generada per aquest programa) com directament a target_root
+    (per si l'estructura del desti no segueix aquesta convencio).
+
+    Si hi ha MES D'UN candidat possible (exacte o de rang), es tria
+    el directori amb la data de modificacio (mtime) MES RECENT, ja
+    que sol ser la carpeta on s'esta desant material actualment.
+
+    Retorna un Path relatiu a target_root, o None si no es troba res.
+    """
+    exact_re = re.compile(r'^(\d{4})_(\d{2})_(\d{2})(?:[ _\-].*)?$')
+    range_re = re.compile(r'^(\d{4})_(\d{2})_(\d{2})-(\d{2})(?:[ _\-].*)?$')
+
+    dirs_a_cercar = []
+    year_dir = target_root / str(any_)
+    if year_dir.is_dir():
+        dirs_a_cercar.append(year_dir)
+    if target_root.is_dir():
+        dirs_a_cercar.append(target_root)
+
+    exact_candidats = []   # [(mtime, Path), ...]
+    rang_candidats = []    # [(mtime, Path), ...]
+
+    for base_dir in dirs_a_cercar:
+        try:
+            subdirs = sorted(p for p in base_dir.iterdir() if p.is_dir())
+        except OSError:
+            continue
+
+        for d in subdirs:
+            # Primer comprovem si és un directori de RANG de dies, ja
+            # que el seu nom també podria fer "match" amb el patró
+            # exacte (p. ex. "2024_07_01-05..." comença com si el dia
+            # fos "01"). El rang és més específic i té preferencia.
+            rm = range_re.match(d.name)
+            if rm:
+                y, mo, d1, d2 = (int(g) for g in rm.groups())
+                if y == any_ and mo == mes and d1 <= dia <= d2:
+                    try:
+                        rang_candidats.append((d.stat().st_mtime, d))
+                    except OSError:
+                        pass
+                continue
+
+            em = exact_re.match(d.name)
+            if em:
+                y, mo, dd = int(em.group(1)), int(em.group(2)), int(em.group(3))
+                if y == any_ and mo == mes and dd == dia:
+                    try:
+                        exact_candidats.append((d.stat().st_mtime, d))
+                    except OSError:
+                        pass
+
+    # Si hi ha coincidencies exactes, guanyen sobre les de rang; entre
+    # diversos candidats del mateix tipus, ens quedem amb el mes recent.
+    if exact_candidats:
+        _, trobat = max(exact_candidats, key=lambda t: t[0])
+        return trobat.relative_to(target_root)
+    if rang_candidats:
+        _, trobat = max(rang_candidats, key=lambda t: t[0])
+        return trobat.relative_to(target_root) / f"{any_}_{mes:02d}_{dia:02d}"
+    return None
+
+
+def data_a_path(filename, target_root=None):
     filename = Path(filename).name
     match = re.search(r'_(\d{8})_', filename)
     if not match:
         return None
 
     data = datetime.strptime(match.group(1), "%Y%m%d")
+    any_, mes, dia = data.year, data.month, data.day
 
-    return Path(str(data.year)) / f"{data.year}_{data.month:02d}_{data.day:02d}"
+    if target_root is not None:
+        trobat = _cerca_desti_existent(Path(target_root), any_, mes, dia)
+        if trobat is not None:
+            return trobat
+
+    return Path(str(any_)) / f"{any_}_{mes:02d}_{dia:02d}"
 
 def revisar_fitxers(missing_files, source_root, target_root):
     """
@@ -458,7 +545,7 @@ def revisar_fitxers(missing_files, source_root, target_root):
             )
             root.destroy()
             return
-        if data_a_path(missing_files[state["idx"]][0]) is None:
+        if data_a_path(missing_files[state["idx"]][0], target_root) is None:
             btn_from_file.config(state=tk.DISABLED)
         else:
             btn_from_file.config(state=tk.NORMAL)
@@ -544,7 +631,7 @@ def revisar_fitxers(missing_files, source_root, target_root):
     btn_from_file = tk.Button(
         btn_frame,
         text="Data Fitxer",
-        command=lambda: move_file_to(target_root / data_a_path(missing_files[state["idx"]][0])),
+        command=lambda: move_file_to(target_root / data_a_path(missing_files[state["idx"]][0], target_root)),
         width=14,
         bg="#55E1E3",
         fg="white",
@@ -558,7 +645,7 @@ def revisar_fitxers(missing_files, source_root, target_root):
     add_tooltip(
         btn_from_file,
         lambda: f"Directori Fixer:\n{target_root / dest}"
-            if (dest := data_a_path(missing_files[state["idx"]][0])) is not None
+            if (dest := data_a_path(missing_files[state["idx"]][0], target_root)) is not None
             else "No s'ha pogut deduir la data del nom del fitxer"    
     )
 
