@@ -288,7 +288,7 @@ def revisar_fitxers(missing_files, source_root, target_root):
 
 
     total = len(missing_files)
-    state = {"idx": 0, "last_dir": target_root, "mogudes": 0, "saltades": 0}
+    state = {"idx": 0, "last_dir": target_root, "mogudes": 0, "saltades": 0, "historial": []}
 
 
     def center_window(window):
@@ -590,6 +590,7 @@ def revisar_fitxers(missing_files, source_root, target_root):
     
         try:
             shutil.move(str(full_path), dest_file)
+            state["historial"].append((full_path, dest_file))
             state["last_dir"] = dest_dir
             state["mogudes"] += 1
             state["idx"] += 1
@@ -655,6 +656,147 @@ def revisar_fitxers(missing_files, source_root, target_root):
     tk.Button(btn_frame, text="Salta", command=skip_file, width=10,
               font=("Segoe UI", 10), relief=tk.FLAT,
               cursor="hand2").pack(side=tk.LEFT, padx=4)
+    def undo_files():
+        hist = state["historial"]
+        if not hist:
+            messagebox.showinfo("Desfer", "No hi ha cap moviment per desfer.")
+            return
+
+        recent = hist[-10:][::-1]  # els 10 últims, del més recent al més antic
+
+        dlg = tk.Toplevel(root)
+        dlg.title("Desfer moviments")
+        dlg.configure(bg="#1e1e1e")
+        dlg.resizable(True, True)
+        dlg.geometry("700x500")
+        dlg.grab_set()
+
+        tk.Label(
+            dlg,
+            text="Selecciona els fitxers que vols tornar a l'origen:",
+            bg="#1e1e1e", fg="#dddddd",
+            font=("Segoe UI", 10, "bold"),
+        ).pack(padx=14, pady=(12, 6), anchor="w")
+
+        # Canvas amb scroll
+        canvas_frame = tk.Frame(dlg, bg="#1e1e1e")
+        canvas_frame.pack(fill=tk.BOTH, expand=True, padx=14, pady=6)
+        
+        canvas = tk.Canvas(canvas_frame, bg="#1e1e1e", highlightthickness=0)
+        scrollbar = tk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg="#1e1e1e")
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        vars_ = []
+        dlg._img_refs = []  # emmagatzema al diàleg perquè no es descarte
+        for orig, dest in recent:
+            var = tk.BooleanVar(value=False)
+            vars_.append((var, orig, dest))
+            frame_row = tk.Frame(scrollable_frame, bg="#1e1e1e")
+            frame_row.pack(fill=tk.X, pady=6, anchor="w")
+            
+            tk.Checkbutton(
+                frame_row, variable=var,
+                bg="#1e1e1e", fg="#dddddd",
+                selectcolor="#333333",
+                activebackground="#1e1e1e", activeforeground="#ffffff",
+                font=("Segoe UI", 9),
+            ).pack(side=tk.LEFT, padx=(0, 12))
+            
+            # Intenta carregar miniatura si es una imatge
+            ext = dest.suffix.lower()
+            if HAS_PIL and ext in {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"}:
+                try:
+                    img = Image.open(dest)
+                    img.thumbnail((70, 70), Image.LANCZOS)
+                    # Converteix a RGB si necessari
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    photo = ImageTk.PhotoImage(img)
+                    dlg._img_refs.append(photo)
+                    img_label = tk.Label(frame_row, image=photo, bg="#1e1e1e", relief=tk.SUNKEN)
+                    img_label.pack(side=tk.LEFT, padx=(0, 12))
+                except Exception as e:
+                    print(f"[DEBUG] Error carregant imatge {dest}: {e}", file=sys.stderr)
+            
+            tk.Label(
+                frame_row,
+                text=f"{dest.name}  →  {orig.parent}",
+                bg="#1e1e1e", fg="#aaaaaa",
+                font=("Segoe UI", 9),
+                anchor="w",
+                wraplength=400,
+            ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        def confirmar():
+            errors = []
+            restored = []
+            for var, orig, dest in vars_:
+                if not var.get():
+                    continue
+                try:
+                    orig.parent.mkdir(parents=True, exist_ok=True)
+                    target_name = orig
+                    if target_name.exists():
+                        stem, suffix, i = orig.stem, orig.suffix, 1
+                        while target_name.exists():
+                            target_name = orig.parent / f"{stem}_{i}{suffix}"
+                            i += 1
+                    shutil.move(str(dest), target_name)
+                    restored.append((orig, dest))
+                except OSError as e:
+                    errors.append(f"{dest.name}: {e}")
+
+            # elimina de l'historial els que s'han restaurat
+            for orig, dest in restored:
+                try:
+                    state["historial"].remove((orig, dest))
+                except ValueError:
+                    pass
+                state["mogudes"] -= 1
+                # reinserim el fitxer a la llista de missing perquè el
+                # comptador d'índex no quedi desfasat
+                state["idx"] = max(0, state["idx"] - 1)
+
+            update_stats()
+            dlg.destroy()
+            if errors:
+                messagebox.showerror("Errors en restaurar", "\n".join(errors))
+            elif restored:
+                messagebox.showinfo(
+                    "Desfer completat",
+                    f"S'han restaurat {len(restored)} fitxer(s)."
+                )
+
+        btn_row = tk.Frame(dlg, bg="#1e1e1e")
+        btn_row.pack(pady=(10, 12), padx=14, anchor="e")
+        tk.Button(
+            btn_row, text="Restaura seleccionats",
+            command=confirmar,
+            bg="#e67e22", fg="white",
+            font=("Segoe UI", 10, "bold"),
+            relief=tk.FLAT, cursor="hand2",
+        ).pack(side=tk.LEFT, padx=4)
+        tk.Button(
+            btn_row, text="Cancel·la",
+            command=dlg.destroy,
+            font=("Segoe UI", 10),
+            relief=tk.FLAT, cursor="hand2",
+        ).pack(side=tk.LEFT, padx=4)
+
+    tk.Button(btn_frame, text="Desfer", command=undo_files, width=10,
+              bg="#e67e22", fg="white", font=("Segoe UI", 10),
+              relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT, padx=4)
     tk.Button(btn_frame, text="Surt", command=quit_review, width=10,
               bg="#c0392b", fg="white", font=("Segoe UI", 10),
               relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT, padx=4)
