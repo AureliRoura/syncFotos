@@ -806,6 +806,12 @@ def revisar_fitxers(missing_files, source_root, target_root):
 
 
 def main():
+    if len(sys.argv) == 1:
+        from sync_fotos_gui import launch_sync_fotos_gui
+
+        launch_sync_fotos_gui(Path(__file__).resolve())
+        return
+
     parser = argparse.ArgumentParser(
         description="Trova fitxers de l'origen que no es troben al desti (per checksum)."
     )
