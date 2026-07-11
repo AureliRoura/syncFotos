@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import sys
 
-from pathlib import Path
-
-from src.syncfotos.tools.duplicats import DuplicatsApp
+from src.syncfotos.ui.duplicats_gui import DuplicatsApp
 
 
 if __name__ == "__main__":
