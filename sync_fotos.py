@@ -29,7 +29,7 @@ from src.syncfotos.ui.review_gui import revisar_fitxers
 
 def main():
     if len(sys.argv) == 1:
-        from sync_fotos_gui import launch_sync_fotos_gui
+        from src.syncfotos.ui.sync_fotos_gui import launch_sync_fotos_gui
 
         launch_sync_fotos_gui(Path(__file__).resolve())
         return

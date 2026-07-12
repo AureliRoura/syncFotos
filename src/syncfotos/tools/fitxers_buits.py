@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fitxers_buits.py
+src.syncfotos.tools.fitxers_buits
 
 Cerca, dins d'un directori i tots els seus subdirectoris, tots els
 fitxers que tinguin tamany 0 bytes (fitxers buits/corruptes).
@@ -13,11 +13,11 @@ Per cada fitxer trobat, guarda:
 El resultat es desa en un fitxer CSV.
 
 US:
-    python fitxers_buits.py <directori> [--sortida fitxer.csv]
+    python -m src.syncfotos.tools.fitxers_buits <directori> [--sortida fitxer.csv]
 
 Exemple:
-    python fitxers_buits.py "D:\\Fotos"
-    python fitxers_buits.py "D:\\Fotos" --sortida buits_fotos.csv
+    python -m src.syncfotos.tools.fitxers_buits "D:\\Fotos"
+    python -m src.syncfotos.tools.fitxers_buits "D:\\Fotos" --sortida buits_fotos.csv
 
 NOTA sobre la "data de creacio":
     A Windows, st_ctime es realment la data de creacio del fitxer.

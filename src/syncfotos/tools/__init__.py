@@ -9,6 +9,5 @@ from ..core.duplicats_core import (
 	load_cache,
 	open_with_default_app,
 )
-from .fitxers_buits import cerca_fitxers_buits, format_data, guarda_csv, main as fitxers_buits_main
 
 
