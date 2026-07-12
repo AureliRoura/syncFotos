@@ -22,8 +22,8 @@ DANGER = "#c0392b"
 MUTED = "#b7c0cc"
 
 
-def launch_sync_fotos_gui(script_path: Path) -> None:
-    script_path = script_path.resolve()
+def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
+    script_path = script_path.resolve() if script_path is not None else None
     root = tk.Tk()
     root.title("SyncFotos")
     root.configure(bg=WINDOW_BG)
@@ -98,7 +98,10 @@ def launch_sync_fotos_gui(script_path: Path) -> None:
         if not origen or not desti:
             raise ValueError("Has d'indicar origen i desti.")
 
-        command = [sys.executable, str(script_path), origen, desti]
+        if script_path is None:
+            command = [sys.executable, "-m", "syncfotos.sync_cli", origen, desti]
+        else:
+            command = [sys.executable, str(script_path), origen, desti]
         if options["generar_sortida"].get():
             command.append("--generar-sortida")
         if options["mostrar_checksum"].get():
@@ -139,7 +142,7 @@ def launch_sync_fotos_gui(script_path: Path) -> None:
                     text=True,
                     encoding="utf-8",
                     errors="replace",
-                    cwd=str(script_path.parent),
+                    cwd=str(script_path.parent) if script_path is not None else None,
                 )
                 assert process.stdout is not None
                 for line in process.stdout:

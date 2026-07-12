@@ -1,3 +1,17 @@
+Metadata-Version: 2.4
+Name: syncfotos
+Version: 1.0.0
+Summary: Eina per comparar, revisar i classificar fotografies i videos entre directoris.
+Author: SyncFotos
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/OWNER/REPO
+Project-URL: Repository, https://github.com/OWNER/REPO
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: pillow>=10.0.0
+Requires-Dist: python-vlc>=3.0.0
+Requires-Dist: opencv-python>=4.8.0
+
 # SyncFotos
 
 Aplicació en Python per sincronitzar, revisar i classificar fotografies i vídeos entre dos directoris.

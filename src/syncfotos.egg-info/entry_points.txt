@@ -1,0 +1,5 @@
+[console_scripts]
+sync-fotos = syncfotos.sync_cli:main
+sync-fotos-duplicats = syncfotos.tools.duplicats:main
+sync-fotos-fitxers-buits = syncfotos.tools.fitxers_buits:main
+sync-fotos-gui = syncfotos.sync_gui:main

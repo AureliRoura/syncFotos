@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "syncfotos"
+version = "1.0.0"
+description = "Eina per comparar, revisar i classificar fotografies i videos entre directoris."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+  { name = "SyncFotos" }
+]
+dependencies = [
+  "pillow>=10.0.0",
+  "python-vlc>=3.0.0",
+  "opencv-python>=4.8.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/AureliRoura/SyncFotos"
+Repository = "https://github.com/AureliRoura/SyncFotos"
+
+[project.scripts]
+sync-fotos = "syncfotos.sync_cli:main"
+sync-fotos-gui = "syncfotos.sync_gui:main"
+sync-fotos-duplicats = "syncfotos.tools.duplicats:main"
+sync-fotos-fitxers-buits = "syncfotos.tools.fitxers_buits:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
