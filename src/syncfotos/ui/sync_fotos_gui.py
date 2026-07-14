@@ -24,6 +24,16 @@ DANGER = "#c0392b"
 MUTED = "#b7c0cc"
 
 
+def merge_terminal_output(rendered_text: str, chunk: str) -> str:
+    for char in chunk:
+        if char == "\r":
+            line_start = rendered_text.rfind("\n") + 1
+            rendered_text = rendered_text[:line_start]
+        else:
+            rendered_text += char
+    return rendered_text
+
+
 def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
     script_path = script_path.resolve() if script_path is not None else None
     root = tk.Tk()
@@ -54,6 +64,7 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
     run_button = None
     log_queue: queue.Queue[str | None] = queue.Queue()
     worker: threading.Thread | None = None
+    rendered_log = ""
 
     def add_field(row: int, label: str, default: str = "", browse: str | None = "dir") -> tk.Entry:
         ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=7)
@@ -77,8 +88,11 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
         return entry
 
     def append_log(text: str) -> None:
+        nonlocal rendered_log
+        rendered_log = merge_terminal_output(rendered_log, text)
         output.configure(state=tk.NORMAL)
-        output.insert(tk.END, text)
+        output.delete("1.0", tk.END)
+        output.insert(tk.END, rendered_log)
         output.see(tk.END)
         output.configure(state=tk.DISABLED)
 
@@ -121,12 +135,14 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
         return command
 
     def run_script() -> None:
+        nonlocal rendered_log
         try:
             command = build_command()
         except ValueError as exc:
             messagebox.showerror("Falta informació", str(exc), parent=root)
             return
 
+        rendered_log = ""
         output.configure(state=tk.NORMAL)
         output.delete("1.0", tk.END)
         output.configure(state=tk.DISABLED)
