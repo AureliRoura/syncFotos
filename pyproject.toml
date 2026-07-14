@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=69", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "syncfotos"
-version = "1.0.1"
+dynamic = ["version"]
 description = "Eina per comparar, revisar i classificar fotografies i videos entre directoris."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -33,3 +33,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools_scm]
+tag_regex = "^v(?P<version>\\d+\\.\\d+\\.\\d+.*)$"
+fallback_version = "0.0.0"
