@@ -10,6 +10,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from ..core.sync_core import default_cache_dir
+
 
 WINDOW_BG = "#1f232a"
 PANEL_BG = "#2a2f38"
@@ -191,7 +193,7 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
 
     add_field(0, "Origen")
     add_field(1, "Desti")
-    add_field(2, "Cache dir", default=str((Path.cwd() / "cache")))
+    add_field(2, "Cache dir", default=str(default_cache_dir()))
     add_field(3, "Sortida", browse="file")
     add_field(4, "Script eliminacio", browse="file")
 

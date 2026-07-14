@@ -4,6 +4,7 @@ from .sync_core import (
 	cache_path_for,
 	count_files,
 	data_a_path,
+	default_cache_dir,
 	load_cache,
 	load_validated_cache,
 	scan_directory,

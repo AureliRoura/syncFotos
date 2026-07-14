@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -31,6 +32,18 @@ def cache_path_for(directory, cache_dir):
     dir_hash = hashlib.md5(str(directory).encode()).hexdigest()[:8]
     safe_name = directory.name[:30].replace(" ", "_")
     return cache_dir / f"cache_{safe_name}_{dir_hash}.json"
+
+
+def default_cache_dir():
+    for base in Path(__file__).resolve().parents:
+        if (base / "pyproject.toml").exists() or (base / ".git").exists():
+            return base / "cache"
+
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    if local_appdata:
+        return Path(local_appdata) / "syncfotos" / "cache"
+
+    return Path.home() / ".cache" / "syncfotos"
 
 
 def load_cache(cache_file):

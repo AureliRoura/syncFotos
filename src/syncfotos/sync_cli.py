@@ -8,6 +8,7 @@ from pathlib import Path
 from .core.sync_core import (
     cache_path_for,
     count_files,
+    default_cache_dir,
     load_validated_cache,
     save_cache,
     scan_directory,
@@ -75,7 +76,7 @@ def main() -> None:
 
     source = Path(args.origen).resolve()
     target = Path(args.desti).resolve()
-    cache_dir = Path(args.cache_dir).resolve() if args.cache_dir else Path.cwd() / "cache"
+    cache_dir = Path(args.cache_dir).resolve() if args.cache_dir else default_cache_dir()
 
     if not source.is_dir():
         print(f"Error: l'origen '{source}' no es un directori valid.", file=sys.stderr)

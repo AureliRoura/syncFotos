@@ -15,6 +15,7 @@ from src.syncfotos.core.sync_core import (
     count_files,
     scan_directory,
     save_cache,
+    default_cache_dir,
 )
 from src.syncfotos.core.sync_outputs import (
     build_missing_and_present,
@@ -58,11 +59,7 @@ def main():
 
     source = Path(args.origen).resolve()
     target = Path(args.desti).resolve()
-    cache_dir = (
-        Path(args.cache_dir).resolve()
-        if args.cache_dir
-        else Path.cwd() / "cache"
-    )
+    cache_dir = Path(args.cache_dir).resolve() if args.cache_dir else default_cache_dir()
     
     if not source.is_dir():
         print(f"Error: l'origen '{source}' no es un directori valid.", file=sys.stderr)
