@@ -16,6 +16,7 @@ from ..core.duplicats_core import (
     format_size,
     load_cache,
     open_with_default_app,
+    stop_opened_app,
 )
 
 try:
@@ -55,6 +56,7 @@ class DuplicatsApp:
         self._img_refs = [None, None]
         self._video_btn_refs = [None, None]
         self._display_box = (400, 400)
+        self._active_video_handle = None
 
         self.root = tk.Tk()
         self.root.title("Gestor de Duplicats")
@@ -216,6 +218,7 @@ class DuplicatsApp:
     def _build_review_ui(self):
         self._clear()
         self.root.configure(bg=self.BG)
+        self.root.protocol("WM_DELETE_WINDOW", self._quit_review)
 
         top = tk.Frame(self.root, bg=self.BG3, height=46)
         top.pack(fill=tk.X, side=tk.TOP)
@@ -290,6 +293,10 @@ class DuplicatsApp:
         tk.Button(btn_bar, text="✖  Finalitzar", command=self._quit_review,
                   bg=self.ORANGE, fg="white", **btn_kw).pack(side=tk.RIGHT, padx=5)
 
+    def _stop_active_video(self):
+        stop_opened_app(self._active_video_handle)
+        self._active_video_handle = None
+
     def _enter_current_group(self):
         chk, files = self.groups[self.group_idx]
         self.current_chk = chk
@@ -315,6 +322,7 @@ class DuplicatsApp:
 
     def _show_current_pair(self):
         if not self._advance_to_pending():
+            self._stop_active_video()
             messagebox.showinfo(
                 "Revisió completada",
                 f"S'han revisat tots els grups de duplicats.\n\n"
@@ -444,7 +452,8 @@ class DuplicatsApp:
 
     def _play_video(self, path):
         try:
-            open_with_default_app(path)
+            self._stop_active_video()
+            self._active_video_handle = open_with_default_app(path)
         except Exception as exc:
             messagebox.showerror("Error en obrir el vídeo", f"No s'ha pogut obrir:\n{path}\n\n{exc}", parent=self.root)
 
@@ -483,6 +492,7 @@ class DuplicatsApp:
             f"Voleu finalitzar la revisió?\n\nEliminats: {self.deleted}\nSaltats:   {self.skipped}",
             parent=self.root,
         ):
+            self._stop_active_video()
             self.root.destroy()
 
 

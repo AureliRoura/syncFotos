@@ -54,7 +54,7 @@ def main() -> None:
         "--cache-dir",
         default=None,
         metavar="DIR",
-        help="Directori dels fitxers de control (per defecte: directori actual)",
+        help="Directori dels fitxers de control (per defecte: ./cache)",
     )
     parser.add_argument(
         "--netejar-cache-origen",
@@ -96,6 +96,7 @@ def main() -> None:
         sys.exit(1)
 
     target_cache_file = cache_path_for(target, cache_dir)
+    print(f"Fitxer de cache desti: {target_cache_file}", file=sys.stderr)
     target_cache, target_cache_status = load_validated_cache(target, target_cache_file)
     last_scan_dst = target_cache.get("ultim_escaneig", "mai")
     print(f"Escaneant desti:  {target}", file=sys.stderr)
@@ -108,11 +109,12 @@ def main() -> None:
     target_checksums = set(target_map.values())
     save_cache(target_cache_file, updated_target_cache)
     print(
-        f"  {len(target_checksums)} checksums unics. Cache desada: {target_cache_file.name}",
+        f"  {len(target_checksums)} checksums unics. Cache desada: {target_cache_file}",
         file=sys.stderr,
     )
 
     source_cache_file = cache_path_for(source, cache_dir)
+    print(f"Fitxer de cache origen: {source_cache_file}", file=sys.stderr)
     source_cache, source_cache_status = load_validated_cache(source, source_cache_file)
     last_scan_src = source_cache.get("ultim_escaneig", "mai")
     print(f"\nEscaneant origen: {source}", file=sys.stderr)
@@ -123,7 +125,7 @@ def main() -> None:
     print(f"  {source_total} fitxers trobats. Calculant checksums...", file=sys.stderr)
     source_map, updated_source_cache = scan_directory(source, source_total, source_cache)
     save_cache(source_cache_file, updated_source_cache)
-    print(f"  Cache desada: {source_cache_file.name}", file=sys.stderr)
+    print(f"  Cache desada: {source_cache_file}", file=sys.stderr)
 
     missing, present = build_missing_and_present(source_map, target_checksums)
 

@@ -10,7 +10,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from ..core.sync_core import default_cache_dir
+from ..core.sync_core import cached_directories_in, default_cache_dir
 
 
 WINDOW_BG = "#1f232a"
@@ -66,24 +66,63 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
     worker: threading.Thread | None = None
     rendered_log = ""
 
+    def refresh_cached_directory_choices() -> None:
+        cache_dir_value = fields.get("Cache dir").get().strip() if "Cache dir" in fields else ""
+        if cache_dir_value:
+            choices = cached_directories_in(Path(cache_dir_value))
+        else:
+            choices = []
+
+        for label in ("Origen", "Desti"):
+            widget = fields.get(label)
+            if widget is not None:
+                widget.configure(values=choices)
+
     def add_field(row: int, label: str, default: str = "", browse: str | None = "dir") -> tk.Entry:
         ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=7)
-        entry = tk.Entry(form, bg=ENTRY_BG, relief=tk.FLAT, highlightthickness=1, highlightbackground="#6c7786")
-        entry.insert(0, default)
+        if label in {"Origen", "Desti"}:
+            entry = ttk.Combobox(form, state="normal")
+            entry.configure(values=[])
+        elif label == "Cache dir":
+            value = tk.StringVar(value=default)
+            value.trace_add("write", lambda *_args: refresh_cached_directory_choices())
+            entry = tk.Entry(
+                form,
+                bg=ENTRY_BG,
+                relief=tk.FLAT,
+                highlightthickness=1,
+                highlightbackground="#6c7786",
+                textvariable=value,
+            )
+        else:
+            entry = tk.Entry(form, bg=ENTRY_BG, relief=tk.FLAT, highlightthickness=1, highlightbackground="#6c7786")
+        if label != "Cache dir":
+            entry.insert(0, default)
         entry.grid(row=row, column=1, sticky="ew", pady=7)
         fields[label] = entry
 
         if browse:
             def pick_path() -> None:
                 if browse == "dir":
-                    chosen = filedialog.askdirectory(parent=root)
+                    if label == "Cache dir":
+                        refresh_cached_directory_choices()
+                        current_cache_dir = entry.get().strip() or str(default_cache_dir())
+                        chosen = filedialog.askdirectory(parent=root, initialdir=current_cache_dir)
+                    else:
+                        chosen = filedialog.askdirectory(parent=root)
                 else:
                     chosen = filedialog.asksaveasfilename(parent=root)
                 if chosen:
                     entry.delete(0, tk.END)
                     entry.insert(0, chosen)
+                if label == "Cache dir":
+                    refresh_cached_directory_choices()
 
             ttk.Button(form, text="Explora", command=pick_path).grid(row=row, column=2, padx=(10, 0), pady=7)
+
+        if label == "Cache dir":
+            entry.bind("<FocusOut>", lambda _event: refresh_cached_directory_choices())
+            entry.bind("<Return>", lambda _event: refresh_cached_directory_choices())
 
         return entry
 
@@ -212,6 +251,7 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
     add_field(2, "Cache dir", default=str(default_cache_dir()))
     add_field(3, "Sortida", browse="file")
     add_field(4, "Script eliminacio", browse="file")
+    refresh_cached_directory_choices()
 
     options = {
         "generar_sortida": tk.BooleanVar(value=False),

@@ -35,15 +35,7 @@ def cache_path_for(directory, cache_dir):
 
 
 def default_cache_dir():
-    for base in Path(__file__).resolve().parents:
-        if (base / "pyproject.toml").exists() or (base / ".git").exists():
-            return base / "cache"
-
-    local_appdata = os.environ.get("LOCALAPPDATA")
-    if local_appdata:
-        return Path(local_appdata) / "syncfotos" / "cache"
-
-    return Path.home() / ".cache" / "syncfotos"
+    return Path.cwd() / "cache"
 
 
 def load_cache(cache_file):
@@ -110,6 +102,10 @@ def cache_is_synchronized(directory, cache_data):
 
 
 def load_validated_cache(directory, cache_file):
+    if not cache_file.exists():
+        print(f"[AVIS] No s'ha trobat la cache esperada: '{cache_file}'", file=sys.stderr)
+        return {}, "cache inexistent o buida"
+
     cache_data = load_cache(cache_file)
     if not cache_data:
         return {}, "cache inexistent o buida"
@@ -123,6 +119,26 @@ def load_validated_cache(directory, cache_file):
         file=sys.stderr,
     )
     return {}, reason
+
+
+def cached_directories_in(cache_dir):
+    cache_dir = Path(cache_dir)
+    if not cache_dir.is_dir():
+        return []
+
+    cached_directories = []
+    seen = set()
+    for cache_file in sorted(cache_dir.glob("cache_*.json")):
+        cache_data = load_cache(cache_file)
+        directory = cache_data.get("directori") if cache_data else None
+        if not isinstance(directory, str) or not directory:
+            continue
+        if directory in seen:
+            continue
+        seen.add(directory)
+        cached_directories.append(directory)
+
+    return sorted(cached_directories, key=str.lower)
 
 
 def scan_directory(directory, total, cache_data):

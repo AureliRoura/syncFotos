@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
 import platform
 import subprocess
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
+import ctypes
 
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tiff", ".tif"}
@@ -53,11 +53,71 @@ def open_with_default_app(path: Path):
     """Obre un fitxer amb l'aplicació per defecte del sistema."""
     system = platform.system()
     if system == "Windows":
-        os.startfile(str(path))  # type: ignore[attr-defined]
+        shell32 = ctypes.windll.shell32
+        kernel32 = ctypes.windll.kernel32
+
+        class SHELLEXECUTEINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", ctypes.c_ulong),
+                ("fMask", ctypes.c_ulong),
+                ("hwnd", ctypes.c_void_p),
+                ("lpVerb", ctypes.c_wchar_p),
+                ("lpFile", ctypes.c_wchar_p),
+                ("lpParameters", ctypes.c_wchar_p),
+                ("lpDirectory", ctypes.c_wchar_p),
+                ("nShow", ctypes.c_int),
+                ("hInstApp", ctypes.c_void_p),
+                ("lpIDList", ctypes.c_void_p),
+                ("lpClass", ctypes.c_wchar_p),
+                ("hkeyClass", ctypes.c_void_p),
+                ("dwHotKey", ctypes.c_ulong),
+                ("hIconOrMonitor", ctypes.c_void_p),
+                ("hProcess", ctypes.c_void_p),
+            ]
+
+        info = SHELLEXECUTEINFO()
+        info.cbSize = ctypes.sizeof(SHELLEXECUTEINFO)
+        info.fMask = 0x00000040  # SEE_MASK_NOCLOSEPROCESS
+        info.lpVerb = "open"
+        info.lpFile = str(path)
+        info.nShow = 1
+
+        if not shell32.ShellExecuteExW(ctypes.byref(info)):
+            raise OSError(f"No s'ha pogut obrir '{path}'")
+
+        return info.hProcess
     elif system == "Darwin":
-        subprocess.Popen(["open", str(path)])
+        return subprocess.Popen(["open", str(path)])
     else:
-        subprocess.Popen(["xdg-open", str(path)])
+        return subprocess.Popen(["xdg-open", str(path)])
+
+
+def stop_opened_app(handle):
+    if handle is None:
+        return
+
+    if hasattr(handle, "poll"):
+        try:
+            if handle.poll() is None:
+                handle.terminate()
+                try:
+                    handle.wait(timeout=1)
+                except Exception:
+                    handle.kill()
+        except Exception:
+            pass
+        return
+
+    if platform.system() == "Windows":
+        kernel32 = ctypes.windll.kernel32
+        try:
+            kernel32.TerminateProcess(ctypes.c_void_p(handle), 0)
+        except Exception:
+            pass
+        try:
+            kernel32.CloseHandle(ctypes.c_void_p(handle))
+        except Exception:
+            pass
 
 
 def format_size(size_bytes):

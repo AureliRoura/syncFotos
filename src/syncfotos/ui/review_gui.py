@@ -83,6 +83,19 @@ def revisar_fitxers(missing_files, source_root, target_root):
             return
         player.pause()
 
+    def stop_video_playback():
+        if player is None:
+            return
+        try:
+            if player.is_playing():
+                player.stop()
+        except Exception:
+            pass
+        try:
+            player.set_media(None)
+        except Exception:
+            pass
+
     def seek_video(value):
         if dragging and player is not None:
             player.set_position(float(value) / 1000.0)
@@ -151,11 +164,8 @@ def revisar_fitxers(missing_files, source_root, target_root):
             return
         closing = True
         try:
+            stop_video_playback()
             if player is not None:
-                try:
-                    player.stop()
-                except Exception:
-                    pass
                 try:
                     player.release()
                 except Exception:
@@ -243,9 +253,7 @@ def revisar_fitxers(missing_files, source_root, target_root):
             return
         if not video_controls.winfo_ismapped():
             video_controls.pack(before=btn_frame, fill=tk.X, padx=10, pady=(0, 5))
-        if player.is_playing():
-            player.stop()
-            player.set_media(None)
+        stop_video_playback()
         video_frame.lift()
         video_frame.update()
         wid = video_frame.winfo_id()
@@ -263,9 +271,7 @@ def revisar_fitxers(missing_files, source_root, target_root):
 
     def load_img(path):
         if vlc is not None and player is not None:
-            if player.is_playing():
-                player.stop()
-                player.set_media(None)
+            stop_video_playback()
         video_controls.pack_forget()
         video_frame.lower()
         canvas.delete("all")
