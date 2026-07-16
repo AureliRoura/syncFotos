@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 BLOCK_SIZE = 65536
+MTIME_TOLERANCE_SECONDS = 2.0
 
 
 def compute_checksum(path):
@@ -91,7 +92,13 @@ def cache_is_synchronized(directory, cache_data):
         cached_info = cached_files.get(rel)
         if not cached_info:
             return False, f"fitxer nou o no cachejat: {rel}"
-        if cached_info.get("mtime") != disk_info["mtime"]:
+        cached_mtime = cached_info.get("mtime")
+        disk_mtime = disk_info["mtime"]
+        try:
+            mtime_delta = abs(float(cached_mtime) - float(disk_mtime))
+        except (TypeError, ValueError):
+            return False, f"mtime invalid: {rel}"
+        if mtime_delta > MTIME_TOLERANCE_SECONDS:
             return False, f"mtime diferent: {rel}"
         if cached_info.get("mida") != disk_info["mida"]:
             return False, f"mida diferent: {rel}"
@@ -161,7 +168,15 @@ def scan_directory(directory, total, cache_data):
             continue
 
         cached = cached_files.get(rel)
-        if cached and cached.get("mtime") == mtime and cached.get("mida") == size:
+        cached_mtime = cached.get("mtime") if cached else None
+        same_mtime = False
+        if cached_mtime is not None:
+            try:
+                same_mtime = abs(float(cached_mtime) - float(mtime)) <= MTIME_TOLERANCE_SECONDS
+            except (TypeError, ValueError):
+                same_mtime = False
+
+        if cached and same_mtime and cached.get("mida") == size:
             checksum = cached["checksum"]
             reused += 1
         else:
