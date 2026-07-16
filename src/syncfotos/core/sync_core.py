@@ -128,11 +128,18 @@ def load_validated_cache(directory, cache_file):
     if synchronized:
         return cache_data, "cache valida"
 
+    if reason in {"directori de cache diferent", "format de cache invalid"}:
+        print(
+            f"[AVIS] Cache desalineada per '{directory}'. Motiu: {reason}. Es regenerara.",
+            file=sys.stderr,
+        )
+        return {}, reason
+
     print(
-        f"[AVIS] Cache desalineada per '{directory}'. Motiu: {reason}. Es regenerara.",
+        f"[AVIS] Cache desalineada per '{directory}'. Motiu: {reason}. S'aprofitara parcialment.",
         file=sys.stderr,
     )
-    return {}, reason
+    return cache_data, f"cache parcial ({reason})"
 
 
 def cached_directories_in(cache_dir):
@@ -161,7 +168,19 @@ def scan_directory(directory, total, cache_data):
     result = {}
     processed = 0
     reused = 0
+    reused_moved = 0
     skipped_volatile = 0
+
+    moved_candidates = {}
+    for rel, info in cached_files.items():
+        checksum = info.get("checksum")
+        if not checksum:
+            continue
+        try:
+            key = (Path(rel).name, float(info.get("mtime")), int(info.get("mida")))
+        except (TypeError, ValueError):
+            continue
+        moved_candidates.setdefault(key, set()).add(checksum)
 
     for file_path in directory.rglob("*"):
         if not file_path.is_file():
@@ -191,10 +210,17 @@ def scan_directory(directory, total, cache_data):
             checksum = cached["checksum"]
             reused += 1
         else:
-            checksum = compute_checksum(file_path)
-            if checksum is None:
-                processed += 1
-                continue
+            moved_key = (file_path.name, float(mtime), int(size))
+            candidate_checksums = moved_candidates.get(moved_key, set())
+            if len(candidate_checksums) == 1:
+                checksum = next(iter(candidate_checksums))
+                reused += 1
+                reused_moved += 1
+            else:
+                checksum = compute_checksum(file_path)
+                if checksum is None:
+                    processed += 1
+                    continue
 
         new_files[rel] = {"checksum": checksum, "mtime": mtime, "mida": size}
         result[rel] = checksum
@@ -206,6 +232,8 @@ def scan_directory(directory, total, cache_data):
     print(file=sys.stderr)
     if skipped_volatile:
         print(f"  [INFO] Fitxers volatils ignorats: {skipped_volatile}", file=sys.stderr)
+    if reused_moved:
+        print(f"  [INFO] Fitxers reaprofitats per moviment: {reused_moved}", file=sys.stderr)
     updated_cache = {
         "directori": str(directory),
         "ultim_escaneig": datetime.now().isoformat(timespec="seconds"),
