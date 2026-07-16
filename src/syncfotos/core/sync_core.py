@@ -13,6 +13,11 @@ BLOCK_SIZE = 65536
 MTIME_TOLERANCE_SECONDS = 2.0
 
 
+def _should_skip_cache_file(path: Path) -> bool:
+    name = path.name.lower()
+    return name.endswith(".db-wal") or name.endswith(".db-shm") or name.endswith(".db-journal")
+
+
 def compute_checksum(path):
     sha256 = hashlib.sha256()
     try:
@@ -26,7 +31,7 @@ def compute_checksum(path):
 
 
 def count_files(directory):
-    return sum(1 for p in directory.rglob("*") if p.is_file())
+    return sum(1 for p in directory.rglob("*") if p.is_file() and not _should_skip_cache_file(p))
 
 
 def cache_path_for(directory, cache_dir):
@@ -78,6 +83,8 @@ def cache_is_synchronized(directory, cache_data):
     try:
         for file_path in directory.rglob("*"):
             if not file_path.is_file():
+                continue
+            if _should_skip_cache_file(file_path):
                 continue
             rel = str(file_path.relative_to(directory))
             stat = file_path.stat()
@@ -154,9 +161,13 @@ def scan_directory(directory, total, cache_data):
     result = {}
     processed = 0
     reused = 0
+    skipped_volatile = 0
 
     for file_path in directory.rglob("*"):
         if not file_path.is_file():
+            continue
+        if _should_skip_cache_file(file_path):
+            skipped_volatile += 1
             continue
         rel = str(file_path.relative_to(directory))
         try:
@@ -193,6 +204,8 @@ def scan_directory(directory, total, cache_data):
             print(f"\r  {processed}/{total} fitxers ({pct}%) [{reused} de cache]   ", end="", file=sys.stderr)
 
     print(file=sys.stderr)
+    if skipped_volatile:
+        print(f"  [INFO] Fitxers volatils ignorats: {skipped_volatile}", file=sys.stderr)
     updated_cache = {
         "directori": str(directory),
         "ultim_escaneig": datetime.now().isoformat(timespec="seconds"),
