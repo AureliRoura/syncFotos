@@ -42,7 +42,6 @@ def revisar_fitxers(missing_files, source_root, target_root):
         vlc = None
         player = None
 
-    total = len(missing_files)
     state = create_review_state(target_root)
     closing = False
     after_jobs = []
@@ -296,6 +295,7 @@ def revisar_fitxers(missing_files, source_root, target_root):
     def show_current():
         if closing:
             return
+        total = len(missing_files)
         if state.idx >= total:
             messagebox.showinfo(
                 "Revisio completada",
@@ -478,6 +478,23 @@ def revisar_fitxers(missing_files, source_root, target_root):
             if errors:
                 messagebox.showerror("Errors en restaurar", "\n".join(errors))
             elif restored:
+                restored_entries = []
+                restored_rel_paths = {
+                    str(orig.relative_to(source_root))
+                    for orig, _ in restored
+                }
+                remaining_entries = []
+                for entry in missing_files:
+                    rel_path = entry[0]
+                    rel_key = str(Path(rel_path))
+                    if rel_key in restored_rel_paths:
+                        restored_entries.append(entry)
+                    else:
+                        remaining_entries.append(entry)
+
+                missing_files[:] = restored_entries + remaining_entries
+                state.idx = 0
+                show_current()
                 messagebox.showinfo("Desfer completat", f"S'han restaurat {len(restored)} fitxer(s).")
 
         btn_row = tk.Frame(dlg, bg="#1e1e1e")
