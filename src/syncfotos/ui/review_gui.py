@@ -56,6 +56,23 @@ def revisar_fitxers(missing_files, source_root, target_root):
         y = (screen_height - height) // 2
         window.geometry(f"+{x}+{y}")
 
+    def maximize_window(window):
+        try:
+            window.state("zoomed")
+            if window.state() == "zoomed":
+                return
+        except tk.TclError:
+            pass
+        try:
+            window.wm_attributes("-zoomed", True)
+            return
+        except tk.TclError:
+            pass
+        window.update_idletasks()
+        sw = window.winfo_screenwidth()
+        sh = window.winfo_screenheight()
+        window.geometry(f"{sw}x{sh}+0+0")
+
     def on_press(event):
         global dragging, has_paused
         if player is None:
@@ -114,6 +131,7 @@ def revisar_fitxers(missing_files, source_root, target_root):
     root.title("Revisar fotos mancants")
     root.geometry("960x740")
     root.configure(bg="#1e1e1e")
+    root.after(0, lambda: maximize_window(root))
 
     info_var = tk.StringVar()
     tk.Label(root, textvariable=info_var, bg="#1e1e1e", fg="#dddddd",
@@ -155,7 +173,6 @@ def revisar_fitxers(missing_files, source_root, target_root):
              font=("Segoe UI", 9)).pack(side=tk.RIGHT, padx=12)
     if vlc is not None and player is not None:
         update_video_position()
-    center_window(root)
 
     def close_review():
         nonlocal closing
@@ -405,6 +422,27 @@ def revisar_fitxers(missing_files, source_root, target_root):
         dlg.configure(bg="#1e1e1e")
         dlg.resizable(True, True)
         dlg.geometry("700x500")
+
+        def maximize_dialog():
+            try:
+                dlg.state("zoomed")
+                if dlg.state() == "zoomed":
+                    return
+            except tk.TclError:
+                pass
+            try:
+                dlg.wm_attributes("-zoomed", True)
+                return
+            except tk.TclError:
+                pass
+            # Fallback: ocupar tota la pantalla quan el gestor de finestres
+            # no suporta estats de maximitzacio de Tk.
+            dlg.update_idletasks()
+            sw = dlg.winfo_screenwidth()
+            sh = dlg.winfo_screenheight()
+            dlg.geometry(f"{sw}x{sh}+0+0")
+
+        dlg.after(0, maximize_dialog)
         dlg.grab_set()
 
         tk.Label(
