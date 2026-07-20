@@ -8,7 +8,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
-from ..core.review_ops import create_review_state, move_missing_file, restore_recent_moves
+from ..core.review_ops import create_review_state, delete_missing_file, move_missing_file, restore_recent_actions
 from ..core.sync_core import data_a_path
 
 
@@ -247,7 +247,9 @@ def revisar_fitxers(missing_files, source_root, target_root):
         widget.bind("<Leave>", leave)
 
     def update_stats():
-        stats_var.set(f"Mogudes: {state.mogudes}  |  Saltades: {state.saltades}")
+        stats_var.set(
+            f"Mogudes: {state.mogudes}  |  Eliminades: {state.eliminades}  |  Saltades: {state.saltades}"
+        )
 
     def load_video(path):
         if vlc is None:
@@ -316,7 +318,12 @@ def revisar_fitxers(missing_files, source_root, target_root):
         if state.idx >= total:
             messagebox.showinfo(
                 "Revisio completada",
-                f"S'han revisat tots els fitxers.\n\nMogudes: {state.mogudes}\nSaltades: {state.saltades}"
+                (
+                    "S'han revisat tots els fitxers.\n\n"
+                    f"Mogudes: {state.mogudes}\n"
+                    f"Eliminades: {state.eliminades}\n"
+                    f"Saltades: {state.saltades}"
+                )
             )
             close_review()
             return
@@ -360,10 +367,33 @@ def revisar_fitxers(missing_files, source_root, target_root):
         state.idx += 1
         show_current()
 
+    def delete_file():
+        rel_path, _ = missing_files[state.idx]
+        if not messagebox.askyesno(
+            "Esborrar fitxer",
+            (
+                "Vols esborrar aquest fitxer?\n"
+                "Es guardara a la paperera temporal d'aquesta sessio i el podras recuperar des de Desfer.\n\n"
+                f"{rel_path}"
+            ),
+            parent=root,
+        ):
+            return
+        try:
+            delete_missing_file(source_root, rel_path, state)
+            show_current()
+        except OSError as e:
+            messagebox.showerror("Error en esborrar", str(e), parent=root)
+
     def quit_review():
         if messagebox.askyesno(
             "Sortir",
-            f"Sortir de la revisio?\n\nMogudes: {state.mogudes}\nSaltades: {state.saltades}"
+            (
+                "Sortir de la revisio?\n\n"
+                f"Mogudes: {state.mogudes}\n"
+                f"Eliminades: {state.eliminades}\n"
+                f"Saltades: {state.saltades}"
+            )
         ):
             close_review()
 
@@ -408,11 +438,14 @@ def revisar_fitxers(missing_files, source_root, target_root):
     tk.Button(btn_frame, text="Salta", command=skip_file, width=10,
               font=("Segoe UI", 10), relief=tk.FLAT,
               cursor="hand2").pack(side=tk.LEFT, padx=4)
+    tk.Button(btn_frame, text="Esborra", command=delete_file, width=10,
+              bg="#b03a2e", fg="white", font=("Segoe UI", 10),
+              relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT, padx=4)
 
     def undo_files():
         hist = state.historial
         if not hist:
-            messagebox.showinfo("Desfer", "No hi ha cap moviment per desfer.")
+            messagebox.showinfo("Desfer", "No hi ha cap canvi per desfer.")
             return
 
         recent = hist[-10:][::-1]
@@ -447,7 +480,7 @@ def revisar_fitxers(missing_files, source_root, target_root):
 
         tk.Label(
             dlg,
-            text="Selecciona els fitxers que vols tornar a l'origen:",
+            text="Selecciona els fitxers moguts o esborrats que vols restaurar:",
             bg="#1e1e1e", fg="#dddddd",
             font=("Segoe UI", 10, "bold"),
         ).pack(padx=14, pady=(12, 6), anchor="w")
@@ -467,9 +500,9 @@ def revisar_fitxers(missing_files, source_root, target_root):
 
         vars_ = []
         dlg._img_refs = []
-        for orig, dest in recent:
+        for action, orig, source_path in recent:
             var = tk.BooleanVar(value=False)
-            vars_.append((var, orig, dest))
+            vars_.append((var, action, orig, source_path))
             frame_row = tk.Frame(scrollable_frame, bg="#1e1e1e")
             frame_row.pack(fill=tk.X, pady=6, anchor="w")
             tk.Checkbutton(
@@ -479,10 +512,10 @@ def revisar_fitxers(missing_files, source_root, target_root):
                 activebackground="#1e1e1e", activeforeground="#ffffff",
                 font=("Segoe UI", 9),
             ).pack(side=tk.LEFT, padx=(0, 12))
-            ext = dest.suffix.lower()
+            ext = source_path.suffix.lower()
             if HAS_PIL and ext in {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"}:
                 try:
-                    img = Image.open(dest)
+                    img = Image.open(source_path)
                     img.thumbnail((70, 70), Image.LANCZOS)
                     if img.mode != "RGB":
                         img = img.convert("RGB")
@@ -491,11 +524,13 @@ def revisar_fitxers(missing_files, source_root, target_root):
                     img_label = tk.Label(frame_row, image=photo, bg="#1e1e1e", relief=tk.SUNKEN)
                     img_label.pack(side=tk.LEFT, padx=(0, 12))
                 except Exception as e:
-                    print(f"[DEBUG] Error carregant imatge {dest}: {e}", file=sys.stderr)
+                    print(f"[DEBUG] Error carregant imatge {source_path}: {e}", file=sys.stderr)
+
+            action_text = "MOGUT" if action == "move" else "ESBORRAT"
 
             tk.Label(
                 frame_row,
-                text=f"{dest.name}  →  {orig.parent}",
+                text=f"[{action_text}] {source_path.name}  →  {orig.parent}",
                 bg="#1e1e1e", fg="#aaaaaa",
                 font=("Segoe UI", 9),
                 anchor="w",
@@ -504,9 +539,9 @@ def revisar_fitxers(missing_files, source_root, target_root):
 
         def confirmar():
             errors = []
-            selected_moves = [(orig, dest) for var, orig, dest in vars_ if var.get()]
+            selected_actions = [(action, orig, source_path) for var, action, orig, source_path in vars_ if var.get()]
             try:
-                restored = restore_recent_moves(selected_moves, state)
+                restored = restore_recent_actions(selected_actions, state)
             except OSError as e:
                 errors.append(str(e))
                 restored = []
@@ -519,7 +554,7 @@ def revisar_fitxers(missing_files, source_root, target_root):
                 restored_entries = []
                 restored_rel_paths = {
                     str(orig.relative_to(source_root))
-                    for orig, _ in restored
+                    for _, orig, _ in restored
                 }
                 remaining_entries = []
                 for entry in missing_files:
