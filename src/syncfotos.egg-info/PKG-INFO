@@ -1,11 +1,11 @@
 Metadata-Version: 2.4
 Name: syncfotos
-Version: 1.0.0
+Version: 0.1.11.dev1
 Summary: Eina per comparar, revisar i classificar fotografies i videos entre directoris.
 Author: SyncFotos
-License-Expression: MIT
-Project-URL: Homepage, https://github.com/OWNER/REPO
-Project-URL: Repository, https://github.com/OWNER/REPO
+License: MIT
+Project-URL: Homepage, https://github.com/AureliRoura/SyncFotos
+Project-URL: Repository, https://github.com/AureliRoura/SyncFotos
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
 Requires-Dist: pillow>=10.0.0
@@ -40,74 +40,89 @@ L'objectiu és detectar els fitxers que existeixen al directori d'origen però n
 Si el fitxer té un nom com:
 
 ```text
-PXL_20251129_080003803.TS.mp4
+* VLC Media Player instal·lat per reproduir vídeos a la interfície
 ```
+El paquet instal·la automàticament les seves dependències Python (`Pillow`, `python-vlc` i `opencv-python`).
 
+## Instal·lació i execució
+
+Un cop publicat a PyPI, instal·la SyncFotos amb:
 SyncFotos detecta la data (`2025-11-29`) i proposa moure'l a:
 
-```text
+python -m pip install syncfotos
 2025/
 └── 2025_11_29/
-```
+Després de la instal·lació, les ordres queden disponibles directament al terminal:
 
 Si el nom del fitxer no conté una data reconeguda, aquesta opció no es mostra.
-
----
-
-## Requisits
-
-* Python 3.11 o superior
-* VLC Media Player instal·lat
-
-Llibreries Python:
-
-```bash
-pip install pillow python-vlc opencv-python
-```
-
----
-
-## Execució
-
-```bash
-python sync_fotos.py
-```
-
-Per veure totes les opcions disponibles:
-
-```bash
-python sync_fotos.py --help
-```
-
-També es pot executar com a paquet (un cop instal.lat):
-
-```bash
-sync-fotos --help
+# Interfície gràfica principal
 sync-fotos-gui
+
+# També obre la interfície gràfica si no es passen arguments
+sync-fotos
+
+# Comparació per terminal (origen i destinació són obligatoris)
+sync-fotos "D:\\Fotos\\Origen" "D:\\Fotos\\Desti" --generar-sortida
+
+# Eines addicionals
 sync-fotos-duplicats
 sync-fotos-fitxers-buits "D:\\Fotos"
-```
-
 ---
 
-## Empaquetat i distribució
+Per consultar les opcions de la comparació:
 
-Construcció local del paquet:
+* Python 3.11 o superior
+sync-fotos --help
 
+Llibreries Python:
+Per instal·lar i provar el codi del repositori sense publicar-lo a PyPI:
 ```bash
-python -m pip install --upgrade build
-python -m build
+pip install pillow python-vlc opencv-python
+python -m pip install .
+## Execució
+
+També es pot instal·lar en mode editable durant el desenvolupament amb `python -m pip install -e .`.
+
+## Construcció i pujada a PyPI
+python sync_fotos.py
+La versió del paquet es determina a partir del tag Git `vX.Y.Z`. Crea un tag nou per a cada versió i no reutilitzis una versió ja publicada.
+
+Per construir i comprovar els artefactes localment:
+
+Per veure totes les opcions disponibles:
+python -m pip install --upgrade build twine
+```bash
+python -m twine check dist/*
+python sync_fotos.py --help
 ```
-
-Es generen dos artefactes a `dist/`:
-
-* `syncfotos-<versio>.tar.gz`
-* `syncfotos-<versio>-py3-none-any.whl`
-
-Instal.lació local de prova:
-
+Es generen a `dist/` un paquet `.whl` i un arxiu `.tar.gz`. Per pujar-los manualment a PyPI:
+També es pot executar com a paquet (un cop instal.lat):
 ```bash
-python -m pip install dist/syncfotos-*.whl
+python -m twine upload dist/*
+```
+sync-fotos --help
+Per fer primer una prova a TestPyPI, configura-hi un compte i executa:
+sync-fotos-duplicats
+sync-fotos-fitxers-buits "D:\\Fotos"
+python -m twine upload --repository testpypi dist/*
+
+---
+### Publicació automàtica amb GitHub Actions
+## Empaquetat i distribució
+El workflow [`Build and Publish`](.github/workflows/release.yml) construeix els artefactes i els publica a PyPI quan s'envia un tag `v*`.
+Construcció local del paquet:
+Per activar-ho:
+python -m build
+1. Comprova que el nom `syncfotos` estigui disponible a PyPI.
+2. A la configuració de PyPI, afegeix aquest repositori GitHub com a Trusted Publisher, indicant l'organització/usuari, el repositori i el workflow `.github/workflows/release.yml`.
+3. Envia els canvis al repositori i crea/envia un tag de versió:
+
+	```bash
+	git tag v1.0.0
+	git push origin v1.0.0
+	```
+
+El workflow publica automàticament la versió corresponent al tag. No cal crear un token d'API de PyPI quan s'utilitza Trusted Publishing.
 ```
 
 ---

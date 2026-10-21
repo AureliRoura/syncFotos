@@ -1,5 +1,11 @@
+.gitignore
 README.md
+duplicats.py
+fitxers_buits.py
 pyproject.toml
+sync_fotos.py
+sync_fotos_gui.py
+.github/workflows/release.yml
 src/syncfotos/__init__.py
 src/syncfotos/sync_cli.py
 src/syncfotos/sync_gui.py
@@ -8,6 +14,8 @@ src/syncfotos.egg-info/SOURCES.txt
 src/syncfotos.egg-info/dependency_links.txt
 src/syncfotos.egg-info/entry_points.txt
 src/syncfotos.egg-info/requires.txt
+src/syncfotos.egg-info/scm_file_list.json
+src/syncfotos.egg-info/scm_version.json
 src/syncfotos.egg-info/top_level.txt
 src/syncfotos/core/__init__.py
 src/syncfotos/core/duplicats_core.py
