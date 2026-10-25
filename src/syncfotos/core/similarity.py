@@ -13,6 +13,7 @@ from .sync_core import data_del_nom
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"}
 
 TIME_WINDOW_SECONDS = 10 * 60
+CAROUSEL_TIME_WINDOW_SECONDS = 2 * 60 * 60
 GPS_MAX_DISTANCE_M = 200.0
 MAX_CANDIDATES = 200
 
@@ -171,24 +172,30 @@ def find_similar(
     reference: Path,
     candidates: list[Path],
     cancel_event: Event | None = None,
+    *,
+    time_window_seconds: float = TIME_WINDOW_SECONDS,
+    same_directory: bool = False,
 ) -> list[SimilarMatch]:
     """Pipeline: temps -> GPS -> embeddings -> SIFT/RANSAC per als dubtosos."""
     import numpy as np
 
     reference = Path(reference)
     ref_time, ref_gps = read_metadata(reference)
+    reference_dir = reference.resolve().parent
 
     near = []
     for cand in candidates:
         if cancel_event and cancel_event.is_set():
             return []
         cand = Path(cand)
+        if same_directory and cand.resolve().parent != reference_dir:
+            continue
         try:
             c_time, c_gps = read_metadata(cand)
         except OSError:
             continue
         delta = abs((c_time - ref_time).total_seconds())
-        if delta > TIME_WINDOW_SECONDS:
+        if delta > time_window_seconds:
             continue
         if ref_gps and c_gps and _haversine_m(ref_gps, c_gps) > GPS_MAX_DISTANCE_M:
             continue

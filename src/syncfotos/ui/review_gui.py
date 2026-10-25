@@ -12,7 +12,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from ..core.review_ops import create_review_state, delete_missing_file, move_missing_file, restore_recent_actions
-from ..core.similarity import SimilarMatch, find_similar, is_image
+from ..core.similarity import CAROUSEL_TIME_WINDOW_SECONDS, SimilarMatch, find_similar, is_image
 from ..core.sync_core import data_a_path, directoris_per_data
 from .similar_gui import open_photo_viewer, show_similar_photos
 from .source_carousel import SourcePhotoCarousel
@@ -320,7 +320,14 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
         similar_cancel = cancel
         carousel.set_results(reference, set(), "Cercant semblants…")
         candidates = [path for path in source_photos if path != reference and path.is_file()]
-        similar_future = similar_executor.submit(find_similar, reference, candidates, cancel)
+        similar_future = similar_executor.submit(
+            find_similar,
+            reference,
+            candidates,
+            cancel,
+            time_window_seconds=CAROUSEL_TIME_WINDOW_SECONDS,
+            same_directory=True,
+        )
         similar_future.add_done_callback(
             lambda future, current_generation=generation, current_reference=reference:
                 complete_similar_search(current_generation, current_reference, future)
