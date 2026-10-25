@@ -3,3 +3,4 @@ sync-fotos = syncfotos.sync_cli:main
 sync-fotos-duplicats = syncfotos.tools.duplicats:main
 sync-fotos-fitxers-buits = syncfotos.tools.fitxers_buits:main
 sync-fotos-gui = syncfotos.sync_gui:main
+sync-fotos-instala-dino = syncfotos.tools.instala_dino:main

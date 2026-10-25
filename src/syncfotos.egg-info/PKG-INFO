@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: syncfotos
-Version: 0.1.11.dev1
+Version: 0.1.13.dev0
 Summary: Eina per comparar, revisar i classificar fotografies i videos entre directoris.
 Author: SyncFotos
 License: MIT
@@ -11,6 +11,9 @@ Description-Content-Type: text/markdown
 Requires-Dist: pillow>=10.0.0
 Requires-Dist: python-vlc>=3.0.0
 Requires-Dist: opencv-python>=4.8.0
+Requires-Dist: numpy
+Provides-Extra: similar
+Requires-Dist: transformers; extra == "similar"
 
 # SyncFotos
 
@@ -30,6 +33,7 @@ L'objectiu és detectar els fitxers que existeixen al directori d'origen però n
 * 📁 Moure fitxers a una carpeta seleccionada.
 * 📁 Moure fitxers a l'última carpeta utilitzada.
 * 📅 Moure fitxers automàticament segons la data deduïda del nom.
+* 🧩 Cerca de fotos semblants en moure una foto, amb selecció i ampliació.
 * 🖼 Obrir una fotografia amb un editor extern.
 * 💬 Tooltips amb informació sobre el directori de destinació.
 
@@ -40,21 +44,122 @@ L'objectiu és detectar els fitxers que existeixen al directori d'origen però n
 Si el fitxer té un nom com:
 
 ```text
-* VLC Media Player instal·lat per reproduir vídeos a la interfície
+PXL_20251129_080003803.TS.mp4
+2025-11-29 08.00.03.jpg
 ```
-El paquet instal·la automàticament les seves dependències Python (`Pillow`, `python-vlc` i `opencv-python`).
 
-## Instal·lació i execució
-
-Un cop publicat a PyPI, instal·la SyncFotos amb:
 SyncFotos detecta la data (`2025-11-29`) i proposa moure'l a:
 
-python -m pip install syncfotos
+```text
 2025/
 └── 2025_11_29/
-Després de la instal·lació, les ordres queden disponibles directament al terminal:
+```
 
 Si el nom del fitxer no conté una data reconeguda, aquesta opció no es mostra.
+
+---
+
+## Fotos semblants
+
+Quan es mou una foto, SyncFotos busca entre les fotos pendents les que s'hi assemblen i les mostra en una finestra per decidir-ne el moviment. Cap foto surt marcada per defecte. Un clic sobre una miniatura l'amplia.
+
+Criteris, per ordre:
+
+1. Proximitat temporal (±10 minuts), segons l'EXIF, el nom del fitxer o la data de modificació.
+2. Localització GPS (menys de 200 m), si les dues fotos en tenen.
+3. Similitud d'embeddings (DINOv2 si està instal·lat; si no, un embedding simple).
+4. Confirmació geomètrica amb SIFT i RANSAC per als casos dubtosos.
+
+---
+
+## Requisits
+
+* Python 3.11 o superior.
+* VLC Media Player instal·lat, per reproduir vídeos a la interfície.
+
+Les dependències Python (`Pillow`, `python-vlc`, `opencv-python` i `numpy`) s'instal·len automàticament amb el paquet.
+
+---
+
+## Instal·lació
+
+Es recomana fer servir un entorn virtual o un entorn conda amb Python 3.11 o superior:
+
+```bash
+conda create -n syncfotos python=3.11
+conda activate syncfotos
+```
+
+o bé:
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+### 1. Ús normal (des de PyPI)
+
+```bash
+python -m pip install syncfotos
+```
+
+### 2. Ús normal amb millor detecció de fotos semblants (DINOv2)
+
+DINOv2 necessita `torch` i `transformers`. La variant de `torch` (CPU o GPU NVIDIA amb CUDA) depèn del maquinari i no es pot triar amb pip normal. Per això, després d'instal·lar el paquet, executa:
+
+```bash
+python -m pip install syncfotos
+sync-fotos-instala-dino
+```
+
+L'ordre detecta una GPU NVIDIA i instal·la la variant adequada. Opcions:
+
+```bash
+sync-fotos-instala-dino --cpu                     # força CPU
+sync-fotos-instala-dino --cuda                    # força CUDA
+sync-fotos-instala-dino --index-url <URL>         # índex de PyTorch concret (per exemple cu126)
+```
+
+La primera vegada que s'usa, DINOv2 descarrega el model des de Hugging Face. Si no hi és, la cerca funciona igualment amb l'embedding simple i SIFT.
+
+### 3. Des del codi font (desenvolupament)
+
+```bash
+git clone https://github.com/AureliRoura/SyncFotos.git
+cd SyncFotos
+python -m pip install -e .
+```
+
+El mode editable (`-e`) aplica els canvis del codi sense reinstal·lar. L'ordre s'ha d'executar des de la carpeta que conté `pyproject.toml`.
+
+Per instal·lar una còpia normal, sense mode editable: `python -m pip install .`.
+
+### 4. Des d'un wheel o sdist construït localment
+
+```bash
+python -m pip install dist/syncfotos-*.whl
+```
+
+### 5. Actualitzar o desinstal·lar
+
+```bash
+python -m pip install --upgrade syncfotos
+python -m pip uninstall syncfotos
+```
+
+### Problemes habituals
+
+* `sync-fotos` no es reconeix: l'entorn on has instal·lat el paquet no està activat, o s'ha instal·lat amb una versió de Python anterior a 3.11.
+* `pip install -e .` diu que no troba `pyproject.toml`: no ets a la carpeta del projecte.
+* Els vídeos no es reprodueixen: falta VLC Media Player.
+
+---
+
+## Execució
+
+Un cop instal·lat, les ordres són directament al terminal:
+
+```bash
 # Interfície gràfica principal
 sync-fotos-gui
 
@@ -62,91 +167,63 @@ sync-fotos-gui
 sync-fotos
 
 # Comparació per terminal (origen i destinació són obligatoris)
-sync-fotos "D:\\Fotos\\Origen" "D:\\Fotos\\Desti" --generar-sortida
+sync-fotos "D:\Fotos\Origen" "D:\Fotos\Desti" --generar-sortida
 
 # Eines addicionals
 sync-fotos-duplicats
-sync-fotos-fitxers-buits "D:\\Fotos"
+sync-fotos-fitxers-buits "D:\Fotos"
+```
+
+Per veure totes les opcions de la comparació:
+
+```bash
+sync-fotos --help
+```
+
 ---
 
-Per consultar les opcions de la comparació:
+## Construcció i publicació a PyPI
 
-* Python 3.11 o superior
-sync-fotos --help
+La versió del paquet es determina a partir del tag Git `vX.Y.Z`. Cada publicació necessita un tag nou: no es pot reutilitzar una versió ja publicada.
 
-Llibreries Python:
-Per instal·lar i provar el codi del repositori sense publicar-lo a PyPI:
+### Construcció local
+
 ```bash
-pip install pillow python-vlc opencv-python
-python -m pip install .
-## Execució
-
-També es pot instal·lar en mode editable durant el desenvolupament amb `python -m pip install -e .`.
-
-## Construcció i pujada a PyPI
-python sync_fotos.py
-La versió del paquet es determina a partir del tag Git `vX.Y.Z`. Crea un tag nou per a cada versió i no reutilitzis una versió ja publicada.
-
-Per construir i comprovar els artefactes localment:
-
-Per veure totes les opcions disponibles:
 python -m pip install --upgrade build twine
-```bash
+python -m build
 python -m twine check dist/*
-python sync_fotos.py --help
 ```
-Es generen a `dist/` un paquet `.whl` i un arxiu `.tar.gz`. Per pujar-los manualment a PyPI:
-També es pot executar com a paquet (un cop instal.lat):
+
+Es generen a `dist/` un paquet `.whl` i un arxiu `.tar.gz`.
+
+### Pujada manual
+
 ```bash
 python -m twine upload dist/*
 ```
-sync-fotos --help
-Per fer primer una prova a TestPyPI, configura-hi un compte i executa:
-sync-fotos-duplicats
-sync-fotos-fitxers-buits "D:\\Fotos"
-python -m twine upload --repository testpypi dist/*
 
----
-### Publicació automàtica amb GitHub Actions
-## Empaquetat i distribució
-El workflow [`Build and Publish`](.github/workflows/release.yml) construeix els artefactes i els publica a PyPI quan s'envia un tag `v*`.
-Construcció local del paquet:
-Per activar-ho:
-python -m build
-1. Comprova que el nom `syncfotos` estigui disponible a PyPI.
-2. A la configuració de PyPI, afegeix aquest repositori GitHub com a Trusted Publisher, indicant l'organització/usuari, el repositori i el workflow `.github/workflows/release.yml`.
-3. Envia els canvis al repositori i crea/envia un tag de versió:
-
-	```bash
-	git tag v1.0.0
-	git push origin v1.0.0
-	```
-
-El workflow publica automàticament la versió corresponent al tag. No cal crear un token d'API de PyPI quan s'utilitza Trusted Publishing.
-```
-
----
-
-## Publicació amb GitHub Actions
-
-El workflow [`Build and Publish`](.github/workflows/release.yml) fa:
-
-1. Build de wheel + sdist.
-2. Publicació d'artefactes del build.
-3. Publicació a PyPI quan fas push d'un tag `v*` (per exemple `v1.0.0`).
-
-Passos per activar-ho:
-
-1. A [`pyproject.toml`](pyproject.toml), canvia els URLs `OWNER/REPO` pel teu repositori real.
-2. A PyPI, crea el projecte `syncfotos` (o canvia el nom a `pyproject.toml` si ja existeix).
-3. Configura Trusted Publishing de PyPI per aquest repositori GitHub.
-4. Fes commit i push.
-5. Crea un tag de release:
+Per fer abans una prova a TestPyPI:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+python -m twine upload --repository testpypi dist/*
 ```
+
+### Publicació automàtica amb GitHub Actions
+
+El workflow [`Build and Publish`](.github/workflows/release.yml) construeix els artefactes i els publica a PyPI quan s'envia un tag `v*`.
+
+Per activar-ho:
+
+1. Comprova que el nom `syncfotos` estigui disponible a PyPI.
+2. A la configuració de PyPI, afegeix aquest repositori GitHub com a Trusted Publisher, indicant l'usuari, el repositori i el workflow `.github/workflows/release.yml`.
+3. Envia els canvis al repositori i crea i envia un tag de versió:
+
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+El workflow publica la versió corresponent al tag. No cal cap token d'API de PyPI amb Trusted Publishing. No facis també una pujada manual de la mateixa versió.
 
 ---
 
@@ -157,13 +234,14 @@ git push origin v1.0.0
 3. Mostra cada fitxer (foto o vídeo).
 4. L'usuari pot:
 
-* Moure'l a una carpeta.
-* Moure'l a l'última carpeta utilitzada.
-* Moure'l segons la data del nom.
-* Obrir-lo amb un editor.
-* Saltar-lo.
+   * Moure'l a una carpeta.
+   * Moure'l a l'última carpeta utilitzada.
+   * Moure'l segons la data del nom.
+   * Obrir-lo amb un editor.
+   * Saltar-lo.
 
-5. En finalitzar es mostra un resum de les accions realitzades.
+5. En moure una foto, es proposen les fotos semblants.
+6. En finalitzar es mostra un resum de les accions realitzades.
 
 ---
 
@@ -176,8 +254,8 @@ git push origin v1.0.0
 * Pillow
 * python-vlc
 * OpenCV
-* datetime
-* re
+* NumPy
+* PyTorch i Transformers (opcionals, per a DINOv2)
 
 ---
 
@@ -185,12 +263,13 @@ git push origin v1.0.0
 
 ```text
 syncFotos/
-│
-├── sync_fotos.py
+├── pyproject.toml
 ├── README.md
-├── .gitignore
-├── cache/
-└── ...
+├── src/syncfotos/
+│   ├── core/    # lògica (sincronització, revisió, similitud)
+│   ├── ui/      # interfícies gràfiques
+│   └── tools/   # eines addicionals
+└── .github/workflows/release.yml
 ```
 
 ---
@@ -202,17 +281,8 @@ syncFotos/
 * [ ] Dreceres de teclat.
 * [ ] Millorar la reproducció de vídeos.
 * [ ] Suport per a més formats de noms de fitxer.
+* [ ] Suport per a fotos HEIC.
 * [ ] Generació d'un executable per a Windows.
-
----
-
-## Captura de pantalla
-
-Es recomana afegir una o més captures de la interfície aquí.
-
-```markdown
-![Captura principal](docs/screenshot.png)
-```
 
 ---
 

@@ -295,13 +295,33 @@ def _cerca_desti_existent(target_root, any_, mes, dia):
     return None
 
 
-def data_a_path(filename, target_root=None):
-    filename = Path(filename).name
-    match = re.search(r'_(\d{8})_', filename)
-    if not match:
-        return None
+_NAME_DATE_PATTERNS = (
+    # 2025-02-10 19.47.59
+    re.compile(r'(?<!\d)(\d{4})-(\d{2})-(\d{2})[ _T](\d{2})[.:\-](\d{2})[.:\-](\d{2})(?!\d)'),
+    # PXL_20250101_100000...
+    re.compile(r'_(\d{4})(\d{2})(\d{2})_(?:(\d{2})(\d{2})(\d{2}))?'),
+)
 
-    data = datetime.strptime(match.group(1), "%Y%m%d")
+
+def data_del_nom(filename):
+    """Retorna el datetime deduit del nom del fitxer (hora 00:00:00 si no n'hi ha) o None."""
+    name = Path(filename).name
+    for pattern in _NAME_DATE_PATTERNS:
+        match = pattern.search(name)
+        if not match:
+            continue
+        parts = [int(g) if g else 0 for g in match.groups()]
+        try:
+            return datetime(*parts)
+        except ValueError:
+            continue
+    return None
+
+
+def data_a_path(filename, target_root=None):
+    data = data_del_nom(filename)
+    if data is None:
+        return None
     any_, mes, dia = data.year, data.month, data.day
 
     if target_root is not None:

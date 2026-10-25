@@ -48,6 +48,27 @@ def move_missing_file(source_root: Path, rel_path: Path, dest_dir: Path, state: 
     return full_path, dest_file
 
 
+def move_similar_files(
+    source_root: Path, rel_paths: list[Path], dest_dir: Path, state: ReviewState
+) -> tuple[list[Path], list[tuple[Path, str]]]:
+    """Mou fitxers sense avançar l'índex de revisió (encara no s'havien revisat)."""
+    moved: list[Path] = []
+    errors: list[tuple[Path, str]] = []
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for rel_path in rel_paths:
+        full_path = source_root / rel_path
+        try:
+            dest_file = unique_destination(dest_dir, full_path.name)
+            shutil.move(str(full_path), dest_file)
+        except OSError as e:
+            errors.append((rel_path, str(e)))
+            continue
+        state.historial.append(("move", full_path, dest_file))
+        state.mogudes += 1
+        moved.append(rel_path)
+    return moved, errors
+
+
 def delete_missing_file(source_root: Path, rel_path: Path, state: ReviewState) -> Path:
     full_path = source_root / rel_path
     if state.trash_dir is None:

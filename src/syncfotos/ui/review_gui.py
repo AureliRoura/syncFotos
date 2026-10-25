@@ -10,6 +10,7 @@ from tkinter import filedialog, messagebox
 
 from ..core.review_ops import create_review_state, delete_missing_file, move_missing_file, restore_recent_actions
 from ..core.sync_core import data_a_path
+from .similar_gui import show_similar_photos
 
 
 dragging = False
@@ -357,7 +358,8 @@ def revisar_fitxers(missing_files, source_root, target_root):
     def move_file_to(dest_dir: Path):
         rel_path, _ = missing_files[state.idx]
         try:
-            move_missing_file(source_root, rel_path, dest_dir, state)
+            _, dest_file = move_missing_file(source_root, rel_path, dest_dir, state)
+            show_similar_photos(root, dest_file, missing_files, source_root, dest_dir, state)
             show_current()
         except OSError as e:
             messagebox.showerror("Error en moure", str(e))
