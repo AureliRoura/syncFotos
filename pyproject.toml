@@ -23,8 +23,8 @@ dependencies = [
 similar = ["transformers"]
 
 [project.urls]
-Homepage = "https://github.com/AureliRoura/SyncFotos"
-Repository = "https://github.com/AureliRoura/SyncFotos"
+Homepage = "https://github.com/AureliRoura/syncFotos"
+Repository = "https://github.com/AureliRoura/syncFotos"
 
 [project.scripts]
 sync-fotos = "syncfotos.sync_cli:main"
