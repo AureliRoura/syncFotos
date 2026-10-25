@@ -10,6 +10,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from ..core.gui_config import load_gui_config, save_gui_config
 from ..core.sync_core import cached_directories_in, default_cache_dir
 
 
@@ -60,6 +61,7 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
     style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"))
 
     fields = {}
+    saved_config = load_gui_config()
     status_var = tk.StringVar(value="Emplena els camps i prem Executa.")
     run_button = None
     log_queue: queue.Queue[str | None] = queue.Queue()
@@ -177,6 +179,7 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
 
     def run_script() -> None:
         nonlocal rendered_log
+        save_current_config()
         try:
             command = build_command()
         except ValueError as exc:
@@ -253,15 +256,45 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
     add_field(2, "Cache dir", default=str(default_cache_dir()))
     add_field(3, "Sortida", browse="file")
     add_field(4, "Script eliminacio", browse="file")
+    saved_fields = saved_config.get("fields", {})
+    if isinstance(saved_fields, dict):
+        for label, entry in fields.items():
+            value = saved_fields.get(label)
+            if isinstance(value, str):
+                entry.delete(0, tk.END)
+                entry.insert(0, value)
     refresh_cached_directory_choices()
 
+    saved_options = saved_config.get("options", {})
+    if not isinstance(saved_options, dict):
+        saved_options = {}
+
+    def saved_bool(name, default):
+        value = saved_options.get(name, default)
+        return value if isinstance(value, bool) else default
+
     options = {
-        "generar_sortida": tk.BooleanVar(value=False),
-        "mostrar_checksum": tk.BooleanVar(value=False),
-        "netejar_cache_origen": tk.BooleanVar(value=False),
-        "revisar": tk.BooleanVar(value=True),
-        "cercar_semblants": tk.BooleanVar(value=True),
+        "generar_sortida": tk.BooleanVar(value=saved_bool("generar_sortida", False)),
+        "mostrar_checksum": tk.BooleanVar(value=saved_bool("mostrar_checksum", False)),
+        "netejar_cache_origen": tk.BooleanVar(value=saved_bool("netejar_cache_origen", False)),
+        "revisar": tk.BooleanVar(value=saved_bool("revisar", True)),
+        "cercar_semblants": tk.BooleanVar(value=saved_bool("cercar_semblants", True)),
     }
+
+    def save_current_config():
+        try:
+            save_gui_config({
+                "fields": {label: entry.get() for label, entry in fields.items()},
+                "options": {name: variable.get() for name, variable in options.items()},
+            })
+        except OSError as exc:
+            status_var.set(f"No s'ha pogut desar la configuració: {exc}")
+
+    def close_gui():
+        save_current_config()
+        root.destroy()
+
+    root.protocol("WM_DELETE_WINDOW", close_gui)
 
     options_row = ttk.Frame(root)
     options_row.pack(fill=tk.X, padx=20, pady=(0, 10))
@@ -284,7 +317,7 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
 
     run_button = ttk.Button(button_row, text="Executa", style="Accent.TButton", command=run_script)
     run_button.pack(side=tk.LEFT)
-    ttk.Button(button_row, text="Sortir", command=root.destroy).pack(side=tk.LEFT, padx=(10, 0))
+    ttk.Button(button_row, text="Sortir", command=close_gui).pack(side=tk.LEFT, padx=(10, 0))
     ttk.Label(button_row, textvariable=status_var, style="Hint.TLabel").pack(side=tk.RIGHT)
 
     log_panel = ttk.Frame(root, style="Panel.TFrame")
