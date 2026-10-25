@@ -9,7 +9,7 @@ from pathlib import Path
 from threading import Event
 
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 
 from ..core.review_ops import create_review_state, delete_missing_file, move_missing_file, restore_recent_actions
 from ..core.similarity import CAROUSEL_TIME_WINDOW_SECONDS, SimilarMatch, find_similar, is_image
@@ -239,7 +239,7 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
 
     root.protocol("WM_DELETE_WINDOW", close_review)
 
-    def add_tooltip(widget, text_func):
+    def add_tooltip(widget, text_func, wraplength=0):
         tip = None
 
         def enter(event):
@@ -255,6 +255,7 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
                 padx=5,
                 pady=2,
                 justify=tk.LEFT,
+                wraplength=wraplength,
             )
             lbl.pack()
             tip.update_idletasks()
@@ -360,11 +361,46 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
             fg="#dddddd",
             font=("Segoe UI", 9, "bold"),
         ).pack(side=tk.LEFT, padx=(0, 6))
+        labels = []
         for destination in destinations:
             try:
-                label = str(destination.relative_to(target_root))
+                labels.append(str(destination.relative_to(target_root)))
             except ValueError:
-                label = str(destination)
+                labels.append(str(destination))
+
+        if len(destinations) > 3:
+            selected_destination = tk.StringVar(value=labels[0])
+            selector_width = min(
+                max(52, max(len(label) for label in labels)),
+                max(32, (root.winfo_screenwidth() - 400) // 9),
+            )
+            selector = ttk.Combobox(
+                date_suggestions_frame,
+                textvariable=selected_destination,
+                values=labels,
+                state="readonly",
+                width=selector_width,
+            )
+            selector.current(0)
+            selector.pack(side=tk.LEFT, padx=3)
+            add_tooltip(
+                selector,
+                lambda: str(destinations[max(selector.current(), 0)]),
+                wraplength=max(300, min(700, root.winfo_screenwidth() - 40)),
+            )
+            tk.Button(
+                date_suggestions_frame,
+                text="Mou al seleccionat",
+                command=lambda: move_file_to(destinations[selector.current()]),
+                bg="#397b70",
+                fg="white",
+                font=("Segoe UI", 9),
+                relief=tk.FLAT,
+                cursor="hand2",
+            ).pack(side=tk.LEFT, padx=3)
+            return
+
+        for destination, label in zip(destinations, labels):
             tk.Button(
                 date_suggestions_frame,
                 text=label,
