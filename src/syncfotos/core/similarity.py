@@ -188,6 +188,13 @@ def find_similar(
         if cancel_event and cancel_event.is_set():
             return []
         cand = Path(cand)
+        if cand.resolve() == reference.resolve():
+            continue
+        try:
+            if cand.samefile(reference):
+                continue
+        except OSError:
+            pass
         if same_directory and cand.resolve().parent != reference_dir:
             continue
         try:
