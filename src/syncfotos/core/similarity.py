@@ -17,7 +17,7 @@ GPS_MAX_DISTANCE_M = 200.0
 MAX_CANDIDATES = 200
 
 # (acceptacio directa, zona dubtosa) per cada tipus d'embedding.
-DINO_THRESHOLDS = (0.88, 0.65)
+DINO_THRESHOLDS = (0.88, 0.30)
 # L'embedding simple nomes detecta duplicats quasi identics: SIFT confirma la resta.
 FALLBACK_THRESHOLDS = (0.90, -1.0)
 
