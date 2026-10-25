@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from ..core.review_ops import create_review_state, delete_missing_file, move_missing_file, restore_recent_actions
-from ..core.sync_core import data_a_path
+from ..core.sync_core import data_a_path, directoris_per_data
 from .similar_gui import show_similar_photos
 
 
@@ -166,6 +166,9 @@ def revisar_fitxers(missing_files, source_root, target_root):
     video_pos.pack(side=tk.LEFT, fill=tk.X, expand=True)
     video_controls.pack(side=tk.TOP, fill=tk.X, padx=10, pady=(0, 5))
 
+    date_suggestions_frame = tk.Frame(root, bg="#1e1e1e")
+    date_suggestions_frame.pack(fill=tk.X, padx=10, pady=(0, 4))
+
     btn_frame = tk.Frame(root, bg="#1e1e1e")
     btn_frame.pack(fill=tk.X, padx=10, pady=8)
 
@@ -252,6 +255,35 @@ def revisar_fitxers(missing_files, source_root, target_root):
             f"Mogudes: {state.mogudes}  |  Eliminades: {state.eliminades}  |  Saltades: {state.saltades}"
         )
 
+    def show_date_suggestions(filename):
+        for widget in date_suggestions_frame.winfo_children():
+            widget.destroy()
+        destinations = directoris_per_data(target_root, filename)
+        if not destinations:
+            return
+        tk.Label(
+            date_suggestions_frame,
+            text="Destins per data:",
+            bg="#1e1e1e",
+            fg="#dddddd",
+            font=("Segoe UI", 9, "bold"),
+        ).pack(side=tk.LEFT, padx=(0, 6))
+        for destination in destinations:
+            try:
+                label = str(destination.relative_to(target_root))
+            except ValueError:
+                label = str(destination)
+            tk.Button(
+                date_suggestions_frame,
+                text=label,
+                command=lambda dest=destination: move_file_to(dest),
+                bg="#397b70",
+                fg="white",
+                font=("Segoe UI", 9),
+                relief=tk.FLAT,
+                cursor="hand2",
+            ).pack(side=tk.LEFT, padx=3)
+
     def load_video(path):
         if vlc is None:
             video_frame.lift()
@@ -334,6 +366,7 @@ def revisar_fitxers(missing_files, source_root, target_root):
             btn_from_file.config(state=tk.NORMAL)
         rel_path, _ = missing_files[state.idx]
         full_path = source_root / rel_path
+        show_date_suggestions(rel_path)
         root.title(f"Revisar fotos mancants  ({state.idx + 1}/{total})")
         info_var.set(f"{state.idx + 1} / {total}   \u2192   {rel_path}")
         update_stats()

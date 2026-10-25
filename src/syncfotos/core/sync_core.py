@@ -247,6 +247,11 @@ def _cerca_desti_existent(target_root, any_, mes, dia):
     Busca dins el desti si ja existeix un directori adequat per a
     aquesta data, seguint dues regles (per aquest ordre de prioritat).
     """
+    candidats = _destins_per_data(target_root, any_, mes, dia)
+    return candidats[0].relative_to(target_root) if candidats else None
+
+
+def _destins_per_data(target_root, any_, mes, dia):
     exact_re = re.compile(r'^(\d{4})_(\d{2})_(\d{2})(?:[ _\-].*)?$')
     range_re = re.compile(r'^(\d{4})_(\d{2})_(\d{2})-(\d{2})(?:[ _\-].*)?$')
 
@@ -286,13 +291,18 @@ def _cerca_desti_existent(target_root, any_, mes, dia):
                     except OSError:
                         pass
 
-    if exact_candidats:
-        _, trobat = max(exact_candidats, key=lambda t: t[0])
-        return trobat.relative_to(target_root)
-    if rang_candidats:
-        _, trobat = max(rang_candidats, key=lambda t: t[0])
-        return trobat.relative_to(target_root) / f"{any_}_{mes:02d}_{dia:02d}"
-    return None
+    exact_candidats.sort(key=lambda t: t[0], reverse=True)
+    rang_candidats.sort(key=lambda t: t[0], reverse=True)
+    candidats = [path for _, path in exact_candidats]
+    candidats.extend(path / f"{any_}_{mes:02d}_{dia:02d}" for _, path in rang_candidats)
+    unics = []
+    vistos = set()
+    for path in candidats:
+        key = str(path).casefold()
+        if key not in vistos:
+            vistos.add(key)
+            unics.append(path)
+    return unics
 
 
 _NAME_DATE_PATTERNS = (
@@ -330,3 +340,16 @@ def data_a_path(filename, target_root=None):
             return trobat
 
     return Path(str(any_)) / f"{any_}_{mes:02d}_{dia:02d}"
+
+
+def directoris_per_data(target_root, filename):
+    """Retorna tots els destins compatibles amb la data del nom, o el desti per defecte."""
+    data = data_del_nom(filename)
+    if data is None:
+        return []
+    target_root = Path(target_root)
+    candidates = _destins_per_data(target_root, data.year, data.month, data.day)
+    if candidates:
+        return candidates
+    date_dir = f"{data.year}_{data.month:02d}_{data.day:02d}"
+    return [target_root / str(data.year) / date_dir]
