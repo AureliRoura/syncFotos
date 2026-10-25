@@ -2,15 +2,20 @@
 from __future__ import annotations
 
 import platform
+import queue
 import sys
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from ..core.review_ops import create_review_state, delete_missing_file, move_missing_file, restore_recent_actions
+from ..core.similarity import SimilarMatch, find_similar, is_image
 from ..core.sync_core import data_a_path, directoris_per_data
-from .similar_gui import show_similar_photos
+from .similar_gui import open_photo_viewer, show_similar_photos
+from .source_carousel import SourcePhotoCarousel
 
 
 dragging = False
@@ -134,6 +139,30 @@ def revisar_fitxers(missing_files, source_root, target_root):
     root.configure(bg="#1e1e1e")
     root.after(0, lambda: maximize_window(root))
 
+    def pending_source_photos():
+        photos = []
+        for rel_path, _ in missing_files[state.idx:]:
+            path = Path(source_root) / Path(rel_path)
+            if is_image(path) and path.is_file():
+                photos.append(path)
+        return photos
+
+    source_photos = pending_source_photos()
+    main_content = tk.Frame(root, bg="#1e1e1e")
+    main_content.pack(expand=True, fill=tk.BOTH)
+    carousel = SourcePhotoCarousel(
+        main_content,
+        source_photos,
+        lambda path: open_photo_viewer(root, path, path.name),
+    )
+    if missing_files:
+        carousel.set_directory((Path(source_root) / Path(missing_files[0][0])).parent)
+    similar_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="syncfotos-similar")
+    similar_results = queue.Queue()
+    similar_generation = 0
+    similar_cancel: Event | None = None
+    similar_future: Future | None = None
+
     info_var = tk.StringVar()
     tk.Label(root, textvariable=info_var, bg="#1e1e1e", fg="#dddddd",
              font=("Segoe UI", 10), anchor="w", wraplength=940).pack(
@@ -141,8 +170,8 @@ def revisar_fitxers(missing_files, source_root, target_root):
 
     _img_ref = [None]
 
-    viewer = tk.Frame(root)
-    viewer.pack(expand=True, fill=tk.BOTH, padx=10)
+    viewer = tk.Frame(main_content, bg="#111111")
+    viewer.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=(0, 10))
     canvas = tk.Canvas(viewer, bg="#111111", highlightthickness=0)
     canvas.place(relx=0, rely=0, relwidth=1, relheight=1)
 
@@ -179,10 +208,13 @@ def revisar_fitxers(missing_files, source_root, target_root):
         update_video_position()
 
     def close_review():
-        nonlocal closing
+        nonlocal closing, similar_cancel
         if closing:
             return
         closing = True
+        if similar_cancel is not None:
+            similar_cancel.set()
+        similar_executor.shutdown(wait=False, cancel_futures=True)
         try:
             stop_video_playback()
             if player is not None:
@@ -254,6 +286,56 @@ def revisar_fitxers(missing_files, source_root, target_root):
         stats_var.set(
             f"Mogudes: {state.mogudes}  |  Eliminades: {state.eliminades}  |  Saltades: {state.saltades}"
         )
+
+    def cancel_similar_search():
+        nonlocal similar_generation, similar_cancel, similar_future
+        similar_generation += 1
+        if similar_cancel is not None:
+            similar_cancel.set()
+        if similar_future is not None:
+            similar_future.cancel()
+
+    def complete_similar_search(generation, reference, future):
+        try:
+            matches = future.result()
+            result = (generation, reference, {match.path for match in matches}, f"{len(matches)} semblants")
+        except CancelledError:
+            return
+        except Exception as exc:
+            result = (generation, reference, set(), f"Error cercant: {exc}")
+        similar_results.put(result)
+
+    def request_similar_search(reference: Path):
+        nonlocal similar_generation, similar_cancel, similar_future
+        cancel_similar_search()
+        generation = similar_generation
+        reference = Path(reference)
+        if not is_image(reference):
+            carousel.set_results(None, set(), "No és una foto")
+            return
+        cancel = Event()
+        similar_cancel = cancel
+        carousel.set_results(reference, set(), "Cercant semblants…")
+        candidates = [path for path in source_photos if path != reference and path.is_file()]
+        similar_future = similar_executor.submit(find_similar, reference, candidates, cancel)
+        similar_future.add_done_callback(
+            lambda future, current_generation=generation, current_reference=reference:
+                complete_similar_search(current_generation, current_reference, future)
+        )
+
+    def poll_similar_results():
+        if closing:
+            return
+        try:
+            while True:
+                generation, reference, matches, status = similar_results.get_nowait()
+                if generation == similar_generation:
+                    carousel.set_results(reference, matches, status)
+        except queue.Empty:
+            pass
+        root.after(150, poll_similar_results)
+
+    root.after(150, poll_similar_results)
 
     def show_date_suggestions(filename):
         for widget in date_suggestions_frame.winfo_children():
@@ -366,6 +448,11 @@ def revisar_fitxers(missing_files, source_root, target_root):
             btn_from_file.config(state=tk.NORMAL)
         rel_path, _ = missing_files[state.idx]
         full_path = source_root / rel_path
+        source_photos[:] = pending_source_photos()
+        carousel.set_ordered_photos(source_photos)
+        carousel.set_directory(full_path.parent)
+        carousel.set_current(full_path)
+        request_similar_search(full_path)
         show_date_suggestions(rel_path)
         root.title(f"Revisar fotos mancants  ({state.idx + 1}/{total})")
         info_var.set(f"{state.idx + 1} / {total}   \u2192   {rel_path}")
@@ -390,9 +477,13 @@ def revisar_fitxers(missing_files, source_root, target_root):
 
     def move_file_to(dest_dir: Path):
         rel_path, _ = missing_files[state.idx]
+        source_file = source_root / rel_path
+        cancel_similar_search()
         try:
             _, dest_file = move_missing_file(source_root, rel_path, dest_dir, state)
-            show_similar_photos(root, dest_file, missing_files, source_root, dest_dir, state)
+            carousel.remove_paths({source_file})
+            moved_similar = show_similar_photos(root, dest_file, missing_files, source_root, dest_dir, state)
+            carousel.remove_paths({source_root / rel for rel in moved_similar})
             show_current()
         except OSError as e:
             messagebox.showerror("Error en moure", str(e))

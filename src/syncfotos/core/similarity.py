@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import re
 import sys
+from threading import Event
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -166,7 +167,11 @@ def _sift_inliers(path_a: Path, path_b: Path) -> int:
     return int(mask.sum()) if mask is not None else 0
 
 
-def find_similar(reference: Path, candidates: list[Path]) -> list[SimilarMatch]:
+def find_similar(
+    reference: Path,
+    candidates: list[Path],
+    cancel_event: Event | None = None,
+) -> list[SimilarMatch]:
     """Pipeline: temps -> GPS -> embeddings -> SIFT/RANSAC per als dubtosos."""
     import numpy as np
 
@@ -175,6 +180,8 @@ def find_similar(reference: Path, candidates: list[Path]) -> list[SimilarMatch]:
 
     near = []
     for cand in candidates:
+        if cancel_event and cancel_event.is_set():
+            return []
         cand = Path(cand)
         try:
             c_time, c_gps = read_metadata(cand)
@@ -197,6 +204,8 @@ def find_similar(reference: Path, candidates: list[Path]) -> list[SimilarMatch]:
 
     scored = []
     for cand in near:
+        if cancel_event and cancel_event.is_set():
+            return []
         try:
             scored.append((float(np.dot(ref_vec, _embed(cand, use_dino))), cand))
         except Exception:
@@ -206,6 +215,8 @@ def find_similar(reference: Path, candidates: list[Path]) -> list[SimilarMatch]:
     matches = []
     sift_checks = 0
     for score, cand in scored:
+        if cancel_event and cancel_event.is_set():
+            return []
         if score >= accept:
             matches.append(SimilarMatch(cand, score, verified=True))
         elif score >= doubt and sift_checks < MAX_SIFT_CHECKS:
