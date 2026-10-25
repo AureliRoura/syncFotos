@@ -18,6 +18,16 @@ def _should_skip_cache_file(path: Path) -> bool:
     return name.endswith(".db-wal") or name.endswith(".db-shm") or name.endswith(".db-journal")
 
 
+def _cache_metadata(stat):
+    return {
+        "mtime": stat.st_mtime,
+        "mida": stat.st_size,
+        "ctime_ns": stat.st_ctime_ns,
+        "dev": stat.st_dev,
+        "ino": stat.st_ino,
+    }
+
+
 def compute_checksum(path):
     sha256 = hashlib.sha256()
     try:
@@ -87,8 +97,7 @@ def cache_is_synchronized(directory, cache_data):
             if _should_skip_cache_file(file_path):
                 continue
             rel = str(file_path.relative_to(directory))
-            stat = file_path.stat()
-            disk_files[rel] = {"mtime": stat.st_mtime, "mida": stat.st_size}
+            disk_files[rel] = _cache_metadata(file_path.stat())
     except OSError as e:
         return False, f"error llegint directori: {e}"
 
@@ -109,6 +118,9 @@ def cache_is_synchronized(directory, cache_data):
             return False, f"mtime diferent: {rel}"
         if cached_info.get("mida") != disk_info["mida"]:
             return False, f"mida diferent: {rel}"
+        for key in ("ctime_ns", "dev", "ino"):
+            if cached_info.get(key) != disk_info[key]:
+                return False, f"{key} diferent o absent: {rel}"
         if not cached_info.get("checksum"):
             return False, f"checksum absent: {rel}"
 
@@ -177,7 +189,14 @@ def scan_directory(directory, total, cache_data):
         if not checksum:
             continue
         try:
-            key = (Path(rel).name, float(info.get("mtime")), int(info.get("mida")))
+            key = (
+                Path(rel).name,
+                float(info.get("mtime")),
+                int(info.get("mida")),
+                int(info.get("dev")),
+                int(info.get("ino")),
+                int(info.get("ctime_ns")),
+            )
         except (TypeError, ValueError):
             continue
         moved_candidates.setdefault(key, set()).add(checksum)
@@ -206,11 +225,27 @@ def scan_directory(directory, total, cache_data):
             except (TypeError, ValueError):
                 same_mtime = False
 
-        if cached and same_mtime and cached.get("mida") == size:
+        same_identity = cached and all(
+            cached.get(key) == value
+            for key, value in (
+                ("ctime_ns", stat.st_ctime_ns),
+                ("dev", stat.st_dev),
+                ("ino", stat.st_ino),
+            )
+        )
+
+        if cached and same_mtime and cached.get("mida") == size and same_identity:
             checksum = cached["checksum"]
             reused += 1
         else:
-            moved_key = (file_path.name, float(mtime), int(size))
+            moved_key = (
+                file_path.name,
+                float(mtime),
+                int(size),
+                int(stat.st_dev),
+                int(stat.st_ino),
+                int(stat.st_ctime_ns),
+            )
             candidate_checksums = moved_candidates.get(moved_key, set())
             if len(candidate_checksums) == 1:
                 checksum = next(iter(candidate_checksums))
@@ -222,7 +257,7 @@ def scan_directory(directory, total, cache_data):
                     processed += 1
                     continue
 
-        new_files[rel] = {"checksum": checksum, "mtime": mtime, "mida": size}
+        new_files[rel] = {"checksum": checksum, **_cache_metadata(stat)}
         result[rel] = checksum
         processed += 1
         pct = processed * 100 // total if total else 100
