@@ -22,7 +22,7 @@ dragging = False
 has_paused = False
 
 
-def revisar_fitxers(missing_files, source_root, target_root):
+def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=True):
     """
     Mostra les fotos mancants una a una i permet moure-les a un directori triat.
     Requereix: tkinter (stdlib). Pillow (pip install Pillow) per previsualitzar.
@@ -310,6 +310,9 @@ def revisar_fitxers(missing_files, source_root, target_root):
         cancel_similar_search()
         generation = similar_generation
         reference = Path(reference)
+        if not cercar_semblants:
+            carousel.set_results(reference, set(), "Cerca desactivada")
+            return
         if not is_image(reference):
             carousel.set_results(None, set(), "No és una foto")
             return
@@ -482,7 +485,10 @@ def revisar_fitxers(missing_files, source_root, target_root):
         try:
             _, dest_file = move_missing_file(source_root, rel_path, dest_dir, state)
             carousel.remove_paths({source_file})
-            moved_similar = show_similar_photos(root, dest_file, missing_files, source_root, dest_dir, state)
+            if cercar_semblants:
+                moved_similar = show_similar_photos(root, dest_file, missing_files, source_root, dest_dir, state)
+            else:
+                moved_similar = []
             carousel.remove_paths({source_root / rel for rel in moved_similar})
             show_current()
         except OSError as e:

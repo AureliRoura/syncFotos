@@ -152,6 +152,8 @@ sync-fotos
 # Comparació per terminal (origen i destinació són obligatoris)
 sync-fotos "D:\Fotos\Origen" "D:\Fotos\Desti" --generar-sortida
 
+La cerca de fotos semblants durant la revisió està activada per defecte. Per desactivar-la des del terminal, afegeix `--no-cercar-semblants`; a la finestra de configuració, desmarca **Cercar fotos semblants**.
+
 # Eines addicionals
 sync-fotos-duplicats
 sync-fotos-fitxers-buits "D:\Fotos"

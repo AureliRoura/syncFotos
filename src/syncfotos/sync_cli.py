@@ -73,6 +73,13 @@ def main() -> None:
         action="store_true",
         help="Obre una finestra per revisar i moure les fotos mancants una a una",
     )
+    parser.add_argument(
+        "--no-cercar-semblants",
+        dest="cercar_semblants",
+        action="store_false",
+        default=True,
+        help="Desactiva la cerca de fotos semblants durant la revisio",
+    )
     args = parser.parse_args()
 
     source = Path(args.origen).resolve()
@@ -148,7 +155,7 @@ def main() -> None:
 
     if args.revisar:
         if missing:
-            revisar_fitxers(missing, source, target)
+            revisar_fitxers(missing, source, target, args.cercar_semblants)
         else:
             print("No hi ha fitxers mancants per revisar.", file=sys.stderr)
 

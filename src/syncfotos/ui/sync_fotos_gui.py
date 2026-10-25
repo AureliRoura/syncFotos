@@ -171,6 +171,8 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
             command.extend(["--script-eliminacio", script_eliminacio])
         if options["revisar"].get():
             command.append("--revisar")
+        if not options["cercar_semblants"].get():
+            command.append("--no-cercar-semblants")
         return command
 
     def run_script() -> None:
@@ -258,6 +260,7 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
         "mostrar_checksum": tk.BooleanVar(value=False),
         "netejar_cache_origen": tk.BooleanVar(value=False),
         "revisar": tk.BooleanVar(value=True),
+        "cercar_semblants": tk.BooleanVar(value=True),
     }
 
     options_row = ttk.Frame(root)
@@ -266,6 +269,7 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
     ttk.Checkbutton(options_row, text="Mostrar checksum", variable=options["mostrar_checksum"]).pack(anchor="w")
     ttk.Checkbutton(options_row, text="Netejar cache origen", variable=options["netejar_cache_origen"]).pack(anchor="w")
     ttk.Checkbutton(options_row, text="Revisar fitxers mancants", variable=options["revisar"]).pack(anchor="w")
+    ttk.Checkbutton(options_row, text="Cercar fotos semblants", variable=options["cercar_semblants"]).pack(anchor="w")
 
     button_row = ttk.Frame(root)
     button_row.pack(fill=tk.X, padx=20, pady=(4, 8))
