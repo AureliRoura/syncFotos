@@ -202,7 +202,7 @@ def scan_directory(directory, total, cache_data):
         same_mtime = False
         if cached_mtime is not None:
             try:
-                same_mtime = abs(float(cached_mtime) - float(mtime)) <= MTIME_TOLERANCE_SECONDS
+                same_mtime = float(cached_mtime) == float(mtime)
             except (TypeError, ValueError):
                 same_mtime = False
 
