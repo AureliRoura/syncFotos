@@ -251,7 +251,7 @@ def _cerca_desti_existent(target_root, any_, mes, dia):
     return candidats[0].relative_to(target_root) if candidats else None
 
 
-def _destins_per_data(target_root, any_, mes, dia):
+def _destins_per_data(target_root, any_, mes, dia, include_range_directories=False):
     exact_re = re.compile(r'^(\d{4})_(\d{2})_(\d{2})(?:[ _\-].*)?$')
     range_re = re.compile(r'^(\d{4})_(\d{2})_(\d{2})-(\d{2})(?:[ _\-].*)?$')
 
@@ -294,6 +294,8 @@ def _destins_per_data(target_root, any_, mes, dia):
     exact_candidats.sort(key=lambda t: t[0], reverse=True)
     rang_candidats.sort(key=lambda t: t[0], reverse=True)
     candidats = [path for _, path in exact_candidats]
+    if include_range_directories:
+        candidats.extend(path for _, path in rang_candidats)
     candidats.extend(path / f"{any_}_{mes:02d}_{dia:02d}" for _, path in rang_candidats)
     unics = []
     vistos = set()
@@ -348,8 +350,37 @@ def directoris_per_data(target_root, filename):
     if data is None:
         return []
     target_root = Path(target_root)
-    candidates = _destins_per_data(target_root, data.year, data.month, data.day)
-    if candidates:
-        return candidates
     date_dir = f"{data.year}_{data.month:02d}_{data.day:02d}"
-    return [target_root / str(data.year) / date_dir]
+    default_destination = target_root / str(data.year) / date_dir
+    matched_directories = _destins_per_data(
+        target_root, data.year, data.month, data.day, include_range_directories=True
+    )
+    if matched_directories:
+        candidates = []
+        for directory in matched_directories:
+            candidates.append(directory)
+            if directory.is_dir():
+                try:
+                    candidates.extend(sorted(
+                        path for path in directory.rglob("*") if path.is_dir()
+                    ))
+                except OSError:
+                    pass
+        unique_candidates = []
+        seen = set()
+        for path in candidates:
+            key = str(path).casefold()
+            if key not in seen:
+                seen.add(key)
+                unique_candidates.append(path)
+        date_prefix = date_dir
+        found_date_directory = any(
+            path.exists()
+            and (path.name == date_prefix or path.name.startswith(date_prefix + " ")
+                 or path.name.startswith(date_prefix + "_") or path.name.startswith(date_prefix + "-"))
+            for path in matched_directories
+        )
+        if not found_date_directory:
+            unique_candidates.append(default_destination)
+        return unique_candidates
+    return [default_destination]
