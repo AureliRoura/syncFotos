@@ -8,6 +8,7 @@ from pathlib import Path
 
 import platform
 
+from src.syncfotos import __version__
 from src.syncfotos.core.sync_core import (
     cache_path_for,
     data_a_path,
@@ -40,7 +41,7 @@ def main():
     )
     parser.add_argument("origen", help="Directori origen (els fitxers a verificar)")
     parser.add_argument("desti", help="Directori desti (on s ha de buscar)")
-    parser.add_argument("--version", action="version", version="sync_fotos.py 1.0")
+    parser.add_argument("--version", action="version", version=f"sync_fotos.py {__version__}")
     parser.add_argument("--generar-sortida", action="store_true",
                         help="Activa la generació del fitxer de sortida")
     parser.add_argument("--mostrar-checksum", action="store_true",

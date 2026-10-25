@@ -5,6 +5,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from . import __version__
 from .core.sync_core import (
     cache_path_for,
     count_files,
@@ -33,7 +34,7 @@ def main() -> None:
     )
     parser.add_argument("origen", help="Directori origen (els fitxers a verificar)")
     parser.add_argument("desti", help="Directori desti (on s ha de buscar)")
-    parser.add_argument("--version", action="version", version="syncfotos 1.0")
+    parser.add_argument("--version", action="version", version=f"syncfotos {__version__}")
     parser.add_argument(
         "--generar-sortida",
         action="store_true",
