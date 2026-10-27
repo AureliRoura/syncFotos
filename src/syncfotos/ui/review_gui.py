@@ -11,7 +11,13 @@ from threading import Event
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from ..core.review_ops import create_review_state, delete_missing_file, move_missing_file, restore_recent_actions
+from ..core.review_ops import (
+    create_review_state,
+    delete_missing_file,
+    move_missing_file,
+    move_similar_files,
+    restore_recent_actions,
+)
 from ..core.similarity import CAROUSEL_TIME_WINDOW_SECONDS, SimilarMatch, find_similar, is_image
 from ..core.sync_core import data_a_path, directoris_per_data
 from .similar_gui import open_photo_viewer, show_similar_photos
@@ -524,10 +530,34 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
     def move_file_to(dest_dir: Path):
         rel_path, _ = missing_files[state.idx]
         source_file = source_root / rel_path
+        selected_rel_paths = []
+        for selected_file in carousel.selected_paths():
+            try:
+                selected_rel = selected_file.resolve().relative_to(Path(source_root).resolve())
+            except ValueError:
+                continue
+            if selected_rel != Path(rel_path):
+                selected_rel_paths.append(selected_rel)
         cancel_similar_search()
         try:
             _, dest_file = move_missing_file(source_root, rel_path, dest_dir, state)
             carousel.remove_paths({source_file})
+            if selected_rel_paths:
+                moved, errors = move_similar_files(
+                    source_root, selected_rel_paths, dest_dir, state
+                )
+                moved_set = {str(path) for path in moved}
+                missing_files[:] = [
+                    entry for entry in missing_files
+                    if str(Path(entry[0])) not in moved_set
+                ]
+                carousel.remove_paths({source_root / path for path in moved})
+                if errors:
+                    messagebox.showerror(
+                        "Error en moure fotos seleccionades",
+                        "\n".join(f"{path}: {error}" for path, error in errors),
+                        parent=root,
+                    )
             if cercar_semblants:
                 moved_similar = show_similar_photos(root, dest_file, missing_files, source_root, dest_dir, state)
             else:

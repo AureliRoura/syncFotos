@@ -17,6 +17,7 @@ L'objectiu és detectar els fitxers que existeixen al directori d'origen però n
 * 📁 Moure fitxers a l'última carpeta utilitzada.
 * 📅 Moure fitxers automàticament segons la data deduïda del nom.
 * 🧩 Cerca de fotos semblants en moure una foto, amb selecció i ampliació.
+* ✅ Marcar fotos del carrusel (màxim 30 visibles) perquè es moguin amb la foto actual al mateix destí.
 * 🖼 Obrir una fotografia amb un editor extern.
 * 💬 Tooltips amb informació sobre el directori de destinació.
 
