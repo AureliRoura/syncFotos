@@ -11,6 +11,8 @@ from pathlib import Path
 
 BLOCK_SIZE = 65536
 MTIME_TOLERANCE_SECONDS = 2.0
+CHECKSUM_VERSION = 2
+IMAGE_CHECKSUM_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"}
 
 
 def _should_skip_cache_file(path: Path) -> bool:
@@ -29,9 +31,28 @@ def _cache_metadata(stat):
 
 
 def compute_checksum(path):
+    path = Path(path)
+    if path.suffix.lower() in IMAGE_CHECKSUM_EXTENSIONS:
+        try:
+            from PIL import Image, ImageOps
+
+            sha256 = hashlib.sha256(b"syncfotos-image-pixels-v1\0")
+            with Image.open(path) as image:
+                frame_count = getattr(image, "n_frames", 1)
+                sha256.update(frame_count.to_bytes(4, "big"))
+                for frame_index in range(frame_count):
+                    image.seek(frame_index)
+                    frame = ImageOps.exif_transpose(image.copy()).convert("RGBA")
+                    sha256.update(frame.width.to_bytes(4, "big"))
+                    sha256.update(frame.height.to_bytes(4, "big"))
+                    sha256.update(frame.tobytes())
+            return sha256.hexdigest()
+        except (ImportError, OSError, ValueError):
+            pass
+
     sha256 = hashlib.sha256()
     try:
-        with open(path, "rb") as f:
+        with path.open("rb") as f:
             while chunk := f.read(BLOCK_SIZE):
                 sha256.update(chunk)
         return sha256.hexdigest()
@@ -84,6 +105,8 @@ def cache_is_synchronized(directory, cache_data):
 
     if cache_data.get("directori") != str(directory):
         return False, "directori de cache diferent"
+    if cache_data.get("checksum_version") != CHECKSUM_VERSION:
+        return False, "versio de checksum diferent"
 
     cached_files = cache_data.get("fitxers")
     if not isinstance(cached_files, dict):
@@ -140,7 +163,7 @@ def load_validated_cache(directory, cache_file):
     if synchronized:
         return cache_data, "cache valida"
 
-    if reason in {"directori de cache diferent", "format de cache invalid"}:
+    if reason in {"directori de cache diferent", "format de cache invalid", "versio de checksum diferent"}:
         print(
             f"[AVIS] Cache desalineada per '{directory}'. Motiu: {reason}. Es regenerara.",
             file=sys.stderr,
@@ -175,7 +198,11 @@ def cached_directories_in(cache_dir):
 
 
 def scan_directory(directory, total, cache_data):
-    cached_files = cache_data.get("fitxers", {})
+    cached_files = (
+        cache_data.get("fitxers", {})
+        if cache_data.get("checksum_version") == CHECKSUM_VERSION
+        else {}
+    )
     new_files = {}
     result = {}
     processed = 0
@@ -271,6 +298,7 @@ def scan_directory(directory, total, cache_data):
         print(f"  [INFO] Fitxers reaprofitats per moviment: {reused_moved}", file=sys.stderr)
     updated_cache = {
         "directori": str(directory),
+        "checksum_version": CHECKSUM_VERSION,
         "ultim_escaneig": datetime.now().isoformat(timespec="seconds"),
         "fitxers": new_files,
     }

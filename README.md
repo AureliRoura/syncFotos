@@ -20,6 +20,12 @@ L'objectiu és detectar els fitxers que existeixen al directori d'origen però n
 * 🖼 Obrir una fotografia amb un editor extern.
 * 💬 Tooltips amb informació sobre el directori de destinació.
 
+## Comparació de fitxers
+
+Per a imatges, SyncFotos calcula un SHA-256 dels píxels decodificats i orientats: ignora EXIF i altres diferències de codificació que no canvien la imatge visible. Per a vídeos i altres fitxers, compara el SHA-256 dels bytes originals.
+
+Després d'actualitzar aquesta versió, el primer escaneig recalcula els hashes de les imatges per actualitzar la cache.
+
 ---
 
 ## Organització automàtica per data
