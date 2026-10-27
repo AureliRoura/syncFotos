@@ -42,10 +42,13 @@ def compute_checksum(path):
                 sha256.update(frame_count.to_bytes(4, "big"))
                 for frame_index in range(frame_count):
                     image.seek(frame_index)
-                    frame = ImageOps.exif_transpose(image.copy()).convert("RGBA")
+                    frame = ImageOps.exif_transpose(image).convert("RGBA")
                     sha256.update(frame.width.to_bytes(4, "big"))
                     sha256.update(frame.height.to_bytes(4, "big"))
-                    sha256.update(frame.tobytes())
+                    # Per franges: mateix flux de bytes sense duplicar el fotograma sencer.
+                    for top in range(0, frame.height, 256):
+                        band = frame.crop((0, top, frame.width, min(top + 256, frame.height)))
+                        sha256.update(band.tobytes())
             return sha256.hexdigest()
         except (ImportError, OSError, ValueError):
             pass

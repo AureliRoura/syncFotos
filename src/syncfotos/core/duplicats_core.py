@@ -18,6 +18,11 @@ def load_cache(path: Path):
         return json.load(f)
 
 
+def _is_safe_relative(rel_path: str) -> bool:
+    path = Path(rel_path)
+    return not (path.is_absolute() or path.anchor or ".." in path.parts)
+
+
 def find_duplicate_groups(cache_data, root_dir: Path):
     """
     Retorna una llista de tuples (checksum, [rel_path, rel_path, ...])
@@ -33,6 +38,9 @@ def find_duplicate_groups(cache_data, root_dir: Path):
 
     for rel_path, info in fitxers.items():
         if Path(rel_path).suffix.lower() not in media_exts:
+            continue
+        # Una cache manipulada no pot apuntar fora de l'arrel.
+        if not _is_safe_relative(rel_path):
             continue
         checksum = info.get("checksum")
         if not checksum:

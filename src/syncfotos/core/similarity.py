@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-import re
+import os
 import sys
 from threading import Event
 from dataclasses import dataclass
@@ -31,6 +31,21 @@ _GPS_IFD = 0x8825
 _DATE_ORIGINAL = 36867
 
 _dino = {"tried": False, "model": None, "processor": None, "torch": None, "device": "cpu"}
+
+_CACHE_LIMIT = 1000
+_metadata_cache: dict = {}
+_embed_cache: dict = {}
+
+
+def _file_key(path: Path):
+    stat = os.stat(path)
+    return str(path), stat.st_mtime_ns, stat.st_size
+
+
+def _cache_put(cache: dict, key, value):
+    if len(cache) >= _CACHE_LIMIT:
+        cache.pop(next(iter(cache)))
+    cache[key] = value
 
 
 @dataclass
@@ -62,6 +77,10 @@ def _dms_to_deg(dms, ref) -> float:
 
 def read_metadata(path: Path) -> tuple[datetime, tuple[float, float] | None]:
     """Retorna (data, gps). Data: EXIF, si no el nom del fitxer, si no mtime."""
+    key = _file_key(path)
+    cached = _metadata_cache.get(key)
+    if cached is not None:
+        return cached
     taken = None
     gps = None
     try:
@@ -82,6 +101,7 @@ def read_metadata(path: Path) -> tuple[datetime, tuple[float, float] | None]:
         taken = data_del_nom(path)
     if taken is None:
         taken = datetime.fromtimestamp(Path(path).stat().st_mtime)
+    _cache_put(_metadata_cache, key, (taken, gps))
     return taken, gps
 
 
@@ -113,6 +133,10 @@ def _load_dino():
 def _embed(path: Path, use_dino: bool):
     import numpy as np
 
+    key = (*_file_key(path), use_dino)
+    cached = _embed_cache.get(key)
+    if cached is not None:
+        return cached
     img = _open_rgb(path)
     if use_dino:
         torch = _dino["torch"]
@@ -123,7 +147,9 @@ def _embed(path: Path, use_dino: bool):
         vec = np.asarray(img.resize((16, 16)), dtype="float32").ravel()
         vec = vec - vec.mean()
     norm = float(np.linalg.norm(vec))
-    return vec / norm if norm else vec
+    vec = vec / norm if norm else vec
+    _cache_put(_embed_cache, key, vec)
+    return vec
 
 
 _sift_cache: dict = {}
@@ -181,21 +207,18 @@ def find_similar(
 
     reference = Path(reference)
     ref_time, ref_gps = read_metadata(reference)
-    reference_dir = reference.resolve().parent
+    reference_norm = os.path.normcase(os.path.abspath(reference))
+    reference_dir = os.path.dirname(reference_norm)
 
     near = []
     for cand in candidates:
         if cancel_event and cancel_event.is_set():
             return []
         cand = Path(cand)
-        if cand.resolve() == reference.resolve():
+        cand_norm = os.path.normcase(os.path.abspath(cand))
+        if cand_norm == reference_norm:
             continue
-        try:
-            if cand.samefile(reference):
-                continue
-        except OSError:
-            pass
-        if same_directory and cand.resolve().parent != reference_dir:
+        if same_directory and os.path.dirname(cand_norm) != reference_dir:
             continue
         try:
             c_time, c_gps = read_metadata(cand)
@@ -205,6 +228,11 @@ def find_similar(
         if delta > time_window_seconds:
             continue
         if ref_gps and c_gps and _haversine_m(ref_gps, c_gps) > GPS_MAX_DISTANCE_M:
+            continue
+        try:
+            if cand.samefile(reference):
+                continue
+        except OSError:
             continue
         near.append((delta, cand))
     near.sort(key=lambda t: t[0])

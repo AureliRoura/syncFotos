@@ -149,7 +149,7 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
         photos = []
         for rel_path, _ in missing_files[state.idx:]:
             path = Path(source_root) / Path(rel_path)
-            if is_image(path) and path.is_file():
+            if is_image(path):
                 photos.append(path)
         return photos
 
@@ -326,7 +326,7 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
         cancel = Event()
         similar_cancel = cancel
         carousel.set_results(reference, set(), "Cercant semblants…")
-        candidates = [path for path in source_photos if path != reference and path.is_file()]
+        candidates = [path for path in source_photos if path.parent == reference.parent and path != reference]
         similar_future = similar_executor.submit(
             find_similar,
             reference,
@@ -501,9 +501,7 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
         rel_path, _ = missing_files[state.idx]
         full_path = source_root / rel_path
         source_photos[:] = pending_source_photos()
-        carousel.set_ordered_photos(source_photos)
-        carousel.set_directory(full_path.parent)
-        carousel.set_current(full_path)
+        carousel.update(source_photos, full_path.parent, full_path)
         request_similar_search(full_path)
         show_date_suggestions(rel_path)
         root.title(f"Revisar fotos mancants  ({state.idx + 1}/{total})")

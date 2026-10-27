@@ -18,6 +18,16 @@ def build_missing_and_present(source_map, target_checksums):
     return missing, present
 
 
+_POWERSHELL_QUOTES = "'\u2018\u2019\u201a\u201b"
+
+
+def _powershell_literal(value) -> str:
+    # PowerShell tracta també les cometes tipogràfiques com a delimitadors.
+    text = "".join(ch * 2 if ch in _POWERSHELL_QUOTES else ch for ch in str(value))
+    text = text.replace("\r", "").replace("\n", "")
+    return f"'{text}'"
+
+
 def write_deletion_script(script_path, source, target, present):
     script_path = Path(script_path)
     with open(script_path, "w", encoding="utf-8") as sc:
@@ -30,7 +40,7 @@ def write_deletion_script(script_path, source, target, present):
         sc.write("$ErrorActionPreference = 'Stop'\n\n")
         for rel_path in present:
             full = source / rel_path
-            sc.write(f'Remove-Item -LiteralPath "{full}"\n')
+            sc.write(f"Remove-Item -LiteralPath {_powershell_literal(full)}\n")
 
 
 def write_missing_report(output_path, source, target, missing, mostrar_checksum=False):

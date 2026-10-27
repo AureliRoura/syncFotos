@@ -30,11 +30,15 @@ def main() -> None:
 
     use_cuda = args.cuda or (not args.cpu and has_nvidia_gpu())
     index = args.index_url or (CUDA_INDEX if use_cuda else CPU_INDEX)
+    if not index.startswith("https://"):
+        sys.exit("L'index de PyTorch ha de ser una URL https.")
     print(f"Variant de torch: {'CUDA' if use_cuda else 'CPU'} ({index})")
 
     pip = [sys.executable, "-m", "pip", "install"]
-    # Un sol cop: pip no ha de buscar torch a PyPI, on no hi ha la variant correcta.
-    cmd = pip + ["torch", "--index-url", index, "--extra-index-url", "https://pypi.org/simple"]
+    cmd = pip + ["torch", "--index-url", index]
+    # PyPI com a index addicional només amb els índexs oficials de PyTorch (evita confusió de dependències).
+    if index in (CPU_INDEX, CUDA_INDEX):
+        cmd += ["--extra-index-url", "https://pypi.org/simple"]
     if subprocess.call(cmd) != 0:
         sys.exit("No s'ha pogut instal.lar torch. Per a CUDA, prova --index-url amb un altre cuXXX.")
     sys.exit(subprocess.call(pip + ["transformers"]))

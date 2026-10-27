@@ -8,10 +8,13 @@ THUMB_WIDTH = 176
 THUMB_HEIGHT = 112
 MAX_VISIBLE_PHOTOS = 30
 ROW_HEIGHT = 178
+THUMB_CACHE_LIMIT = 120
 
 
 class SourcePhotoCarousel:
     def __init__(self, parent, photos: list[Path], on_open):
+        self._resolved: dict[Path, Path] = {}
+        self._thumbs: dict[Path, object] = {}
         self._all_photos = photos
         self._directory_photos = photos
         self._removed: set[Path] = set()
@@ -25,7 +28,6 @@ class SourcePhotoCarousel:
         self.selection_status = tk.StringVar(value="Marcades per moure amb l'actual: 0")
         self.only_similar = tk.BooleanVar(value=False)
         self.filter_text = tk.StringVar(value="Només fotos semblants (0)")
-        self._images = []
 
         self.frame = tk.Frame(parent, bg="#1e1e1e", width=205)
         self.frame.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 6))
@@ -62,34 +64,71 @@ class SourcePhotoCarousel:
         ).pack(fill=tk.X, pady=(2, 2))
         self.canvas.configure(scrollregion=(0, 0, THUMB_WIDTH + 12, len(photos) * ROW_HEIGHT))
 
+    def _key(self, path: Path) -> Path:
+        key = self._resolved.get(path)
+        if key is None:
+            key = self._resolved[path] = Path(path).resolve()
+        return key
+
+    def _thumbnail(self, path: Path):
+        photo = self._thumbs.get(path)
+        if photo is not None:
+            return photo
+        from PIL import Image, ImageOps, ImageTk
+
+        try:
+            with Image.open(path) as source:
+                source.draft("RGB", (THUMB_WIDTH * 2, THUMB_HEIGHT * 2))
+                image = ImageOps.exif_transpose(source).convert("RGB")
+            image.thumbnail((THUMB_WIDTH, THUMB_HEIGHT), Image.LANCZOS)
+            photo = ImageTk.PhotoImage(image)
+        except Exception:
+            return None
+        if len(self._thumbs) >= THUMB_CACHE_LIMIT:
+            self._thumbs.pop(next(iter(self._thumbs)))
+        self._thumbs[path] = photo
+        return photo
+
+    def update(self, photos: list[Path], directory: Path, current: Path):
+        """Actualitza cua, carpeta i foto actual amb un sol refresc."""
+        directory = self._key(directory)
+        if self.directory is not None and directory != self.directory:
+            self.selected.clear()
+        self.directory = directory
+        self.current = self._key(current)
+        self._all_photos = [p for p in photos if self._key(p) not in self._removed]
+        self.selected.intersection_update({self._key(p) for p in self._all_photos})
+        self._directory_photos = [p for p in self._all_photos if self._key(p).parent == directory]
+        self._refresh_photos(reset_scroll=True)
+
     def set_directory(self, directory: Path):
-        directory = Path(directory).resolve()
+        directory = self._key(directory)
         if self.directory is not None and directory != self.directory:
             self.selected.clear()
         self.directory = directory
         self._directory_photos = [
             path for path in self._all_photos
-            if path.resolve().parent == self.directory and path.resolve() not in self._removed
+            if self._key(path).parent == self.directory and self._key(path) not in self._removed
         ]
         self._refresh_photos(reset_scroll=True)
 
     def set_ordered_photos(self, photos: list[Path]):
-        self._all_photos = [path for path in photos if path.resolve() not in self._removed]
-        available = {path.resolve() for path in self._all_photos}
+        self._all_photos = [path for path in photos if self._key(path) not in self._removed]
+        available = {self._key(path) for path in self._all_photos}
         self.selected.intersection_update(available)
         if self.directory is not None:
             self._directory_photos = [
-                path for path in self._all_photos if path.resolve().parent == self.directory
+                path for path in self._all_photos if self._key(path).parent == self.directory
             ]
         else:
             self._directory_photos = list(self._all_photos)
         self._refresh_photos(reset_scroll=True)
 
     def selected_paths(self) -> list[Path]:
-        return [path for path in self._directory_photos if path.resolve() in self.selected]
+        return [path for path in self._directory_photos if self._key(path) in self.selected]
 
     def _toggle_selection(self, path: Path):
-        key = path.resolve()
+        key = self._key(path)
         if key == self.current:
             return
         if key in self.selected:
@@ -102,17 +141,23 @@ class SourcePhotoCarousel:
         self._render()
 
     def set_current(self, current: Path):
-        self.current = Path(current).resolve()
+        self.current = self._key(current)
         self._refresh_photos(reset_scroll=True)
 
     def _refresh_photos(self, reset_scroll=False):
-        current = [path for path in self._directory_photos if path.resolve() == self.current]
-        matches = [
-            path for path in self._directory_photos
-            if path.resolve() in self.similar and path.resolve() != self.current
-        ]
+        current_key = self.current
+        current = []
+        matches = []
+        rest = []
+        for path in self._directory_photos:
+            key = self._key(path)
+            if key == current_key:
+                current.append(path)
+                continue
+            rest.append(path)
+            if key in self.similar:
+                matches.append(path)
         self.filter_text.set(f"Només fotos semblants ({len(matches)})")
-        rest = [path for path in self._directory_photos if path.resolve() != self.current]
         ordered = current + matches if self.only_similar.get() else current + rest
         self.photos = ordered[:MAX_VISIBLE_PHOTOS]
         if reset_scroll:
@@ -132,37 +177,35 @@ class SourcePhotoCarousel:
         self._scroll_units(-1 * (event.delta // 120 or 1))
 
     def set_results(self, current: Path | None, similar: set[Path], status: str):
-        self.current = current.resolve() if current else None
-        self.similar = {p.resolve() for p in similar}
+        self.current = self._key(current) if current else None
+        self.similar = {self._key(p) for p in similar}
         self.status.set(status)
         self._refresh_photos()
 
     def remove_paths(self, paths: set[Path]):
-        removed = {p.resolve() for p in paths}
+        removed = {self._key(p) for p in paths}
         self._removed.update(removed)
         self.selected.difference_update(removed)
         self.selection_status.set(
             f"Marcades per moure amb l'actual: {len(self.selected)}"
         )
-        self._all_photos = [p for p in self._all_photos if p.resolve() not in removed]
-        self._directory_photos = [p for p in self._directory_photos if p.resolve() not in removed]
+        self._all_photos = [p for p in self._all_photos if self._key(p) not in removed]
+        self._directory_photos = [p for p in self._directory_photos if self._key(p) not in removed]
         self._refresh_photos()
 
     def _render(self):
         if not self.canvas.winfo_exists():
             return
         self.canvas.delete("visible")
-        self._images.clear()
         height = max(self.canvas.winfo_height(), ROW_HEIGHT)
         start = max(0, int(self.canvas.canvasy(0) // ROW_HEIGHT))
         end = min(len(self.photos), start + height // ROW_HEIGHT + 2)
-        from PIL import Image, ImageOps, ImageTk
 
         width = max(self.canvas.winfo_width(), THUMB_WIDTH + 12)
         for index in range(start, end):
             path = self.photos[index]
             y = index * ROW_HEIGHT
-            key = path.resolve()
+            key = self._key(path)
             current = key == self.current
             similar = key in self.similar
             selected = key in self.selected
@@ -172,15 +215,8 @@ class SourcePhotoCarousel:
                 fill="#252a31", outline=outline, width=3 if current or similar or selected else 1,
                 tags=("visible", f"photo_{index}"),
             )
-            try:
-                with Image.open(path) as source:
-                    image = ImageOps.exif_transpose(source).convert("RGB")
-                image.thumbnail((THUMB_WIDTH, THUMB_HEIGHT), Image.LANCZOS)
-                photo = ImageTk.PhotoImage(image)
-            except Exception:
-                photo = None
+            photo = self._thumbnail(path)
             if photo:
-                self._images.append(photo)
                 self.canvas.create_image(
                     width // 2, y + 5, anchor=tk.N, image=photo,
                     tags=("visible", f"photo_{index}"),
