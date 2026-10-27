@@ -57,7 +57,7 @@ Criteris, per ordre:
 
 ## Requisits
 
-* Python 3.11 o superior.
+* Python 3.13 recomanat (el paquet requereix Python 3.11 o superior).
 * VLC Media Player instal·lat, per reproduir vídeos a la interfície.
 
 Les dependències Python (`Pillow`, `python-vlc`, `opencv-python` i `numpy`) s'instal·len automàticament amb el paquet.
@@ -66,19 +66,21 @@ Les dependències Python (`Pillow`, `python-vlc`, `opencv-python` i `numpy`) s'i
 
 ## Instal·lació
 
-Es recomana fer servir un entorn virtual o un entorn conda amb Python 3.11 o superior:
+Es recomana fer servir un entorn virtual o un entorn conda amb Python 3.13:
 
 ```bash
-conda create -n syncfotos python=3.11
+conda create -n syncfotos python=3.13
 conda activate syncfotos
 ```
 
 o bé:
 
 ```bash
-python -m venv .venv
+py -3.13 -m venv .venv
 .venv\Scripts\activate
 ```
+
+En altres sistemes, substitueix `py -3.13` per `python3.13`.
 
 ### 1. Ús normal (des de PyPI)
 
