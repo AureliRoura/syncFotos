@@ -5,11 +5,13 @@ import json
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
 
 BLOCK_SIZE = 65536
+MAX_HASH_WORKERS = 8
 MTIME_TOLERANCE_SECONDS = 2.0
 CHECKSUM_VERSION = 2
 IMAGE_CHECKSUM_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"}
@@ -30,38 +32,80 @@ def _cache_metadata(stat):
     }
 
 
-def compute_checksum(path):
-    path = Path(path)
-    if path.suffix.lower() in IMAGE_CHECKSUM_EXTENSIONS:
-        try:
-            from PIL import Image, ImageOps
+def _pixel_hash(path):
+    from PIL import Image, ImageOps
 
-            sha256 = hashlib.sha256(b"syncfotos-image-pixels-v1\0")
-            with Image.open(path) as image:
-                frame_count = getattr(image, "n_frames", 1)
-                sha256.update(frame_count.to_bytes(4, "big"))
-                for frame_index in range(frame_count):
-                    image.seek(frame_index)
-                    frame = ImageOps.exif_transpose(image).convert("RGBA")
-                    sha256.update(frame.width.to_bytes(4, "big"))
-                    sha256.update(frame.height.to_bytes(4, "big"))
-                    # Per franges: mateix flux de bytes sense duplicar el fotograma sencer.
-                    for top in range(0, frame.height, 256):
-                        band = frame.crop((0, top, frame.width, min(top + 256, frame.height)))
-                        sha256.update(band.tobytes())
-            return sha256.hexdigest()
-        except (ImportError, OSError, ValueError):
-            pass
+    sha256 = hashlib.sha256(b"syncfotos-image-pixels-v1\0")
+    with Image.open(path) as image:
+        frame_count = getattr(image, "n_frames", 1)
+        sha256.update(frame_count.to_bytes(4, "big"))
+        for frame_index in range(frame_count):
+            image.seek(frame_index)
+            frame = ImageOps.exif_transpose(image).convert("RGBA")
+            sha256.update(frame.width.to_bytes(4, "big"))
+            sha256.update(frame.height.to_bytes(4, "big"))
+            # Per franges: mateix flux de bytes sense duplicar el fotograma sencer.
+            for top in range(0, frame.height, 256):
+                band = frame.crop((0, top, frame.width, min(top + 256, frame.height)))
+                sha256.update(band.tobytes())
+    return sha256.hexdigest()
 
+
+def file_sha256(path):
     sha256 = hashlib.sha256()
     try:
-        with path.open("rb") as f:
+        with Path(path).open("rb") as f:
             while chunk := f.read(BLOCK_SIZE):
                 sha256.update(chunk)
         return sha256.hexdigest()
     except (OSError, PermissionError) as e:
         print(f"[AVIS] No es pot llegir '{path}': {e}", file=sys.stderr)
         return None
+
+
+def _pixel_hash_or_fallback(path, bytes_hash=None):
+    try:
+        return _pixel_hash(path)
+    except Exception as e:
+        # Imatge il·legible o massa gran (DecompressionBombError): hash dels bytes.
+        print(
+            f"\n[AVIS] No es pot llegir la imatge '{path}' ({type(e).__name__}); s'usa el hash dels bytes.",
+            file=sys.stderr,
+        )
+        return bytes_hash or file_sha256(path)
+
+
+def compute_checksum(path):
+    path = Path(path)
+    if path.suffix.lower() in IMAGE_CHECKSUM_EXTENSIONS:
+        return _pixel_hash_or_fallback(path)
+    return file_sha256(path)
+
+
+def build_byte_index(cache_data):
+    """Diccionari hash de bytes -> checksum de píxels de les imatges d'una cache."""
+    index = {}
+    for info in cache_data.get("fitxers", {}).values():
+        if info.get("bytes") and info.get("checksum"):
+            index[info["bytes"]] = info["checksum"]
+    return index
+
+
+def _parallel_map(func, items, label):
+    results = []
+    if not items:
+        return results
+    workers = max(1, min(MAX_HASH_WORKERS, os.cpu_count() or 1))
+    pool = ThreadPoolExecutor(max_workers=workers)
+    try:
+        for done, value in enumerate(pool.map(func, items), 1):
+            results.append(value)
+            if done % 100 == 0 or done == len(items):
+                print(f"\r  {label} {done}/{len(items)}   ", end="", file=sys.stderr)
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
+    print(file=sys.stderr)
+    return results
 
 
 def count_files(directory):
@@ -200,7 +244,7 @@ def cached_directories_in(cache_dir):
     return sorted(cached_directories, key=str.lower)
 
 
-def scan_directory(directory, total, cache_data):
+def scan_directory(directory, total, cache_data, known_by_bytes=None):
     cached_files = (
         cache_data.get("fitxers", {})
         if cache_data.get("checksum_version") == CHECKSUM_VERSION
@@ -208,6 +252,7 @@ def scan_directory(directory, total, cache_data):
     )
     new_files = {}
     result = {}
+    pending = []
     processed = 0
     reused = 0
     reused_moved = 0
@@ -264,8 +309,11 @@ def scan_directory(directory, total, cache_data):
             )
         )
 
+        extra = {}
         if cached and same_mtime and cached.get("mida") == size and same_identity:
             checksum = cached["checksum"]
+            if cached.get("bytes"):
+                extra["bytes"] = cached["bytes"]
             reused += 1
         else:
             moved_key = (
@@ -282,12 +330,10 @@ def scan_directory(directory, total, cache_data):
                 reused += 1
                 reused_moved += 1
             else:
-                checksum = compute_checksum(file_path)
-                if checksum is None:
-                    processed += 1
-                    continue
+                pending.append((rel, file_path, stat))
+                continue
 
-        new_files[rel] = {"checksum": checksum, **_cache_metadata(stat)}
+        new_files[rel] = {"checksum": checksum, **extra, **_cache_metadata(stat)}
         result[rel] = checksum
         processed += 1
         pct = processed * 100 // total if total else 100
@@ -295,6 +341,44 @@ def scan_directory(directory, total, cache_data):
             print(f"\r  {processed}/{total} fitxers ({pct}%) [{reused} de cache]   ", end="", file=sys.stderr)
 
     print(file=sys.stderr)
+    reused_by_bytes = 0
+    decoded = 0
+    if pending:
+        print(f"  {len(pending)} fitxers nous o canviats: calculant hash de bytes...", file=sys.stderr)
+        byte_hashes = _parallel_map(lambda item: file_sha256(item[1]), pending, "bytes")
+        known = known_by_bytes or {}
+        resolved = {}
+        to_decode = {}
+        for (_, file_path, _), bytes_hash in zip(pending, byte_hashes):
+            if bytes_hash is None or file_path.suffix.lower() not in IMAGE_CHECKSUM_EXTENSIONS:
+                continue
+            if bytes_hash in known:
+                resolved[bytes_hash] = known[bytes_hash]
+                reused_by_bytes += 1
+            else:
+                to_decode.setdefault(bytes_hash, file_path)
+        # Un sol hash de píxels per cada contingut de bytes diferent i sense coincidència prèvia.
+        if to_decode:
+            decoded = len(to_decode)
+            print(f"  {decoded} imatges a descodificar (hash de píxels)...", file=sys.stderr)
+            values = _parallel_map(
+                lambda item: _pixel_hash_or_fallback(item[1], item[0]),
+                [(bh, path) for bh, path in to_decode.items()],
+                "pixels",
+            )
+            resolved.update(zip(to_decode, values))
+        for (rel, file_path, stat), bytes_hash in zip(pending, byte_hashes):
+            if bytes_hash is None:
+                continue
+            if file_path.suffix.lower() in IMAGE_CHECKSUM_EXTENSIONS:
+                checksum = resolved[bytes_hash]
+                new_files[rel] = {"checksum": checksum, "bytes": bytes_hash, **_cache_metadata(stat)}
+            else:
+                checksum = bytes_hash
+                new_files[rel] = {"checksum": checksum, **_cache_metadata(stat)}
+            result[rel] = checksum
+        if reused_by_bytes:
+            print(f"  [INFO] Imatges resoltes per bytes idèntics (sense descodificar): {reused_by_bytes}", file=sys.stderr)
     if skipped_volatile:
         print(f"  [INFO] Fitxers volatils ignorats: {skipped_volatile}", file=sys.stderr)
     if reused_moved:

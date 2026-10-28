@@ -7,6 +7,7 @@ from pathlib import Path
 
 from . import __version__
 from .core.sync_core import (
+    build_byte_index,
     cache_path_for,
     count_files,
     default_cache_dir,
@@ -131,7 +132,9 @@ def main() -> None:
         print(f"  Estat cache:    {source_cache_status}", file=sys.stderr)
     source_total = count_files(source)
     print(f"  {source_total} fitxers trobats. Calculant checksums...", file=sys.stderr)
-    source_map, updated_source_cache = scan_directory(source, source_total, source_cache)
+    source_map, updated_source_cache = scan_directory(
+        source, source_total, source_cache, known_by_bytes=build_byte_index(updated_target_cache)
+    )
     save_cache(source_cache_file, updated_source_cache)
     print(f"  Cache desada: {source_cache_file}", file=sys.stderr)
 
