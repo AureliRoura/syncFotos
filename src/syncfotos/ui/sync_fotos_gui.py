@@ -217,6 +217,7 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
                 log_queue.put(None)
 
         threading.Thread(target=worker_main, daemon=True).start()
+        root.after(80, poll_logs)
 
     def poll_logs() -> None:
         finished = False
@@ -335,7 +336,6 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
     output.insert(tk.END, "La sortida del programa apareixerà aquí.\n")
     output.configure(state=tk.DISABLED)
 
-    root.after(80, poll_logs)
     root.mainloop()
 
 

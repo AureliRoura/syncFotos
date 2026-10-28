@@ -6,7 +6,7 @@ import queue
 import sys
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from pathlib import Path
-from threading import Event
+from threading import Event, Thread
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -56,6 +56,7 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
 
     state = create_review_state(target_root)
     closing = False
+    similarity_shutdown = Event()
     after_jobs = []
 
     def center_window(window):
@@ -220,7 +221,24 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
         closing = True
         if similar_cancel is not None:
             similar_cancel.set()
-        similar_executor.shutdown(wait=False, cancel_futures=True)
+
+        def shutdown_similar_executor():
+            try:
+                similar_executor.shutdown(wait=True, cancel_futures=True)
+            finally:
+                similarity_shutdown.set()
+
+        Thread(
+            target=shutdown_similar_executor,
+            daemon=True,
+        ).start()
+        root.withdraw()
+        wait_for_similarity_shutdown()
+
+    def wait_for_similarity_shutdown():
+        if not similarity_shutdown.is_set():
+            root.after(50, wait_for_similarity_shutdown)
+            return
         try:
             stop_video_playback()
             if player is not None:
