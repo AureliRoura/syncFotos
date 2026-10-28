@@ -566,8 +566,15 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
             messagebox.showerror("Error en moure", str(e))
 
     def skip_file():
-        state.saltades += 1
-        state.idx += 1
+        _, checksum = missing_files[state.idx]
+        if checksum is not None:
+            remaining = missing_files[state.idx:]
+            skipped = [entry for entry in remaining if entry[1] == checksum]
+            missing_files[state.idx:] = [entry for entry in remaining if entry[1] != checksum]
+            state.saltades += len(skipped)
+        else:
+            state.saltades += 1
+            state.idx += 1
         show_current()
 
     def delete_file():
@@ -743,6 +750,10 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
         def confirmar():
             errors = []
             selected_actions = [(action, orig, source_path) for var, action, orig, source_path in vars_ if var.get()]
+            resume_rel_path = (
+                missing_files[state.idx][0] if state.idx < len(missing_files) else None
+            )
+            resume_idx = state.idx
             try:
                 restored = restore_recent_actions(selected_actions, state)
             except OSError as e:
@@ -768,8 +779,19 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
                     else:
                         remaining_entries.append(entry)
 
-                missing_files[:] = restored_entries + remaining_entries
-                state.idx = 0
+                resume_idx = next(
+                    (
+                        index for index, entry in enumerate(remaining_entries)
+                        if Path(entry[0]) == Path(resume_rel_path)
+                    ),
+                    min(resume_idx, len(remaining_entries)),
+                )
+                missing_files[:] = (
+                    remaining_entries[:resume_idx]
+                    + restored_entries
+                    + remaining_entries[resume_idx:]
+                )
+                state.idx = resume_idx
                 show_current()
                 messagebox.showinfo("Desfer completat", f"S'han restaurat {len(restored)} fitxer(s).")
 
