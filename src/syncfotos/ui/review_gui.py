@@ -20,12 +20,21 @@ from ..core.review_ops import (
 )
 from ..core.similarity import CAROUSEL_TIME_WINDOW_SECONDS, SimilarMatch, find_similar, is_image
 from ..core.sync_core import data_a_path, directoris_per_data
-from .similar_gui import open_photo_viewer, show_similar_photos
+from .similar_gui import open_photo_viewer
 from .source_carousel import SourcePhotoCarousel
 
 
 dragging = False
 has_paused = False
+
+
+def _remove_resolved_pending(missing_files, index, checksums: set[str], paths: set[Path] | None = None):
+    paths = paths or set()
+    pending = missing_files[index:]
+    missing_files[index:] = [
+        entry for entry in pending
+        if Path(entry[0]) not in paths and entry[1] not in checksums
+    ]
 
 
 def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=True):
@@ -544,7 +553,7 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
             move_file_to(Path(chosen))
 
     def move_file_to(dest_dir: Path):
-        rel_path, _ = missing_files[state.idx]
+        rel_path, checksum = missing_files[state.idx]
         source_file = source_root / rel_path
         selected_rel_paths = []
         for selected_file in carousel.selected_paths():
@@ -556,17 +565,20 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
                 selected_rel_paths.append(selected_rel)
         cancel_similar_search()
         try:
-            _, dest_file = move_missing_file(source_root, rel_path, dest_dir, state)
+            move_missing_file(source_root, rel_path, dest_dir, state)
             carousel.remove_paths({source_file})
+            resolved_checksums = {checksum} if checksum else set()
+            _remove_resolved_pending(missing_files, state.idx, resolved_checksums)
             if selected_rel_paths:
                 moved, errors = move_similar_files(
                     source_root, selected_rel_paths, dest_dir, state
                 )
-                moved_set = {str(path) for path in moved}
-                missing_files[:] = [
-                    entry for entry in missing_files
-                    if str(Path(entry[0])) not in moved_set
-                ]
+                moved_set = set(moved)
+                resolved_checksums.update(
+                    entry[1] for entry in missing_files[state.idx:]
+                    if Path(entry[0]) in moved_set and entry[1]
+                )
+                _remove_resolved_pending(missing_files, state.idx, resolved_checksums, moved_set)
                 carousel.remove_paths({source_root / path for path in moved})
                 if errors:
                     messagebox.showerror(
@@ -574,11 +586,6 @@ def revisar_fitxers(missing_files, source_root, target_root, cercar_semblants=Tr
                         "\n".join(f"{path}: {error}" for path, error in errors),
                         parent=root,
                     )
-            if cercar_semblants:
-                moved_similar = show_similar_photos(root, dest_file, missing_files, source_root, dest_dir, state)
-            else:
-                moved_similar = []
-            carousel.remove_paths({source_root / rel for rel in moved_similar})
             show_current()
         except OSError as e:
             messagebox.showerror("Error en moure", str(e))
