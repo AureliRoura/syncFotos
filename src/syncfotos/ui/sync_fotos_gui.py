@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import platform
 import queue
 import subprocess
 import sys
@@ -10,6 +11,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from .. import __version__
 from ..core.gui_config import load_gui_config, save_gui_config
 from ..core.sync_core import cached_directories_in, default_cache_dir
 
@@ -333,8 +335,8 @@ def launch_sync_fotos_gui(script_path: Path | None = None) -> None:
         font=("Consolas", 10),
     )
     output.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
-    output.insert(tk.END, "La sortida del programa apareixerà aquí.\n")
     output.configure(state=tk.DISABLED)
+    append_log(f"SyncFotos {__version__}\nPython {platform.python_version()}\n\n")
 
     root.mainloop()
 
