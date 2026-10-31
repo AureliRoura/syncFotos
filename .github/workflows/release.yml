@@ -56,3 +56,58 @@ jobs:
 
       - name: Publish to PyPI (Trusted Publishing)
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-github-packages:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Check if minor version changed
+        id: minor_check
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          CURRENT_MINOR="${TAG#*.}"
+          CURRENT_MINOR="${CURRENT_MINOR%%.*}"
+
+          PREV_TAG="$(git tag --sort=-version:refname --list 'v[0-9]*' | grep -v "^${GITHUB_REF_NAME}$" | head -n 1 || true)"
+
+          if [ -z "${PREV_TAG}" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PREV_TAG_NO_V="${PREV_TAG#v}"
+          PREV_MINOR="${PREV_TAG_NO_V#*.}"
+          PREV_MINOR="${PREV_MINOR%%.*}"
+
+          if [ "${CURRENT_MINOR}" != "${PREV_MINOR}" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to GitHub Packages
+        if: steps.minor_check.outputs.publish == 'true'
+        env:
+          TWINE_USERNAME: ${{ github.actor }}
+          TWINE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          TWINE_REPOSITORY_URL: https://pypi.pkg.github.com/${{ github.repository_owner }}
+        shell: bash
+        run: |
+          python -m pip install --upgrade twine
+          python -m twine upload dist/*
