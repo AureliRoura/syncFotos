@@ -17,9 +17,14 @@ CHECKSUM_VERSION = 2
 IMAGE_CHECKSUM_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"}
 
 
-def _should_skip_cache_file(path: Path) -> bool:
+def _should_skip_file(path: Path) -> bool:
     name = path.name.lower()
-    return name.endswith(".db-wal") or name.endswith(".db-shm") or name.endswith(".db-journal")
+    return (
+        name.startswith(".")
+        or name.endswith(".db-wal")
+        or name.endswith(".db-shm")
+        or name.endswith(".db-journal")
+    )
 
 
 def _cache_metadata(stat):
@@ -109,7 +114,7 @@ def _parallel_map(func, items, label):
 
 
 def count_files(directory):
-    return sum(1 for p in directory.rglob("*") if p.is_file() and not _should_skip_cache_file(p))
+    return sum(1 for p in directory.rglob("*") if p.is_file() and not _should_skip_file(p))
 
 
 def cache_path_for(directory, cache_dir):
@@ -164,7 +169,7 @@ def cache_is_synchronized(directory, cache_data):
         for file_path in directory.rglob("*"):
             if not file_path.is_file():
                 continue
-            if _should_skip_cache_file(file_path):
+            if _should_skip_file(file_path):
                 continue
             rel = str(file_path.relative_to(directory))
             disk_files[rel] = _cache_metadata(file_path.stat())
@@ -256,7 +261,7 @@ def scan_directory(directory, total, cache_data, known_by_bytes=None):
     processed = 0
     reused = 0
     reused_moved = 0
-    skipped_volatile = 0
+    skipped_files = 0
 
     moved_candidates = {}
     for rel, info in cached_files.items():
@@ -279,8 +284,8 @@ def scan_directory(directory, total, cache_data, known_by_bytes=None):
     for file_path in directory.rglob("*"):
         if not file_path.is_file():
             continue
-        if _should_skip_cache_file(file_path):
-            skipped_volatile += 1
+        if _should_skip_file(file_path):
+            skipped_files += 1
             continue
         rel = str(file_path.relative_to(directory))
         try:
@@ -379,8 +384,8 @@ def scan_directory(directory, total, cache_data, known_by_bytes=None):
             result[rel] = checksum
         if reused_by_bytes:
             print(f"  [INFO] Imatges resoltes per bytes idèntics (sense descodificar): {reused_by_bytes}", file=sys.stderr)
-    if skipped_volatile:
-        print(f"  [INFO] Fitxers volatils ignorats: {skipped_volatile}", file=sys.stderr)
+    if skipped_files:
+        print(f"  [INFO] Fitxers ignorats: {skipped_files}", file=sys.stderr)
     if reused_moved:
         print(f"  [INFO] Fitxers reaprofitats per moviment: {reused_moved}", file=sys.stderr)
     updated_cache = {

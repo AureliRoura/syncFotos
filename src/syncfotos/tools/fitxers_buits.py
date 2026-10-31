@@ -48,7 +48,7 @@ def cerca_fitxers_buits(directori):
     errors = []
 
     for path in directori.rglob("*"):
-        if not path.is_file():
+        if not path.is_file() or path.name.startswith("."):
             continue
         try:
             stat = path.stat()

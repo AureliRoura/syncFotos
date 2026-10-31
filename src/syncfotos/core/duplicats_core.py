@@ -37,7 +37,8 @@ def find_duplicate_groups(cache_data, root_dir: Path):
     missing_count = 0
 
     for rel_path, info in fitxers.items():
-        if Path(rel_path).suffix.lower() not in media_exts:
+        relative_path = Path(rel_path)
+        if relative_path.name.startswith(".") or relative_path.suffix.lower() not in media_exts:
             continue
         # Una cache manipulada no pot apuntar fora de l'arrel.
         if not _is_safe_relative(rel_path):
